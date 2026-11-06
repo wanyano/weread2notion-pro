@@ -31,3 +31,32 @@ Run `weread note sync` manually from the repair branch:
 Please compare the preview against your current WeRead shelf, especially books
 added during 2026. Review any names not recognized. No automatic schedules are
 enabled on this branch. Do not merge until the first import has been verified.
+
+
+## Reading time restoration (official WeRead Gateway)
+
+The `read time sync` workflow is independent of heatmap generation. The
+previous workflow failed in `github_heatmap` before `read_time` ran; it also
+disabled API-key reading-time operations. This branch now queries the official
+`/readdata/detail` endpoint in `monthly` mode using `baseTime` at each
+month's start (Asia/Shanghai). Monthly `readTimes` is keyed by day and measured
+in **seconds**, not minutes. The current year is the default; select a prior
+year to restore historical records. The script reconciles the existing Pro
+`日` database and its `周`, `月`, `年` relations.
+
+Manual workflow: `read time sync` on `fix/pro-2026-safe-sync`.
+
+1. Choose `mode=preview` (default), and optionally `year=2026`. Preview
+   makes no Notion changes, including the `设置` database.
+2. Inspect `READ_TIME_MONTH` and `READ_TIME_AUDIT` logs. Missing or
+   ambiguous daily buckets stop the job instead of guessing.
+3. Back up the Pro database. Choose `mode=import` only after review.
+   The importer creates only missing positive-duration days or updates
+   changed dates. It never deletes dates or replaces old days with zero.
+4. Run `preview` again and confirm `create=0 update=0` for idempotence.
+5. Repeat for previous calendar years as required.
+
+Heatmap rendering and updating existing heatmap blocks remain separate tasks
+and are **not** enabled by this change. Do not run old main-branch schedules
+against the same Notion databases during testing. Credentials should be stored
+only in GitHub Secrets; never include them in issue comments or logs.
