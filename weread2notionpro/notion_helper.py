@@ -482,8 +482,11 @@ class NotionHelper:
         parent = self.client.blocks.retrieve(after).get("parent")
         if(parent.get("type")=="block_id"):
             after = parent.get("block_id")
+        # Notion API 2026-03-11 requires "position" in place of "after".
         return self.client.blocks.children.append(
-            block_id=block_id, children=children, after=after
+            block_id=block_id,
+            children=children,
+            position={"type": "after_block", "after_block": {"id": after}},
         )
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
