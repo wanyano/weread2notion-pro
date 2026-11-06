@@ -60,3 +60,39 @@ Heatmap rendering and updating existing heatmap blocks remain separate tasks
 and are **not** enabled by this change. Do not run old main-branch schedules
 against the same Notion databases during testing. Credentials should be stored
 only in GitHub Secrets; never include them in issue comments or logs.
+
+
+## Reading records and heatmap recovery
+
+The existing Pro layout distinguishes three data categories:
+- `日`: aggregate reading seconds per calendar day, restored by `read time sync`.
+- `书架.阅读时长`: per-book **cumulative** seconds, available from the official
+  `/book/getprogress` Gateway API. A non-destructive batch preview/import is now available.
+- `阅读记录`: historical **per-book per-day** durations. The documented Gateway
+  endpoints do NOT provide a verifiable book-by-day history. Do not populate
+  this database with extrapolated data or daily totals falsely attributed
+  to books. Existing historical entries remain intact.
+
+On the pre-existing `read time sync` Actions workflow, select the repair
+branch `fix/pro-2026-safe-sync` and choose:
+- `book_preview`: audit a batch of up to 100 shelf books; optional `offset`
+  (starting 0) and `limit` (default 40). No Notion writes.
+- `book_import`: only increase the existing `书架.阅读时长` values for books
+  where the official API reports a higher cumulative duration. It does NOT
+  write to `阅读记录`, change existing reading details, or zero older values.
+- `heatmap_preview`: read the existing `日` database and render a full-year
+  SVG into a downloadable Actions artifact. No Notion writes or Git commits.
+- `heatmap_publish`: render SVG and commit `OUT_FOLDER/weread_YEAR.svg`
+  to the repair branch, then update the pre-existing Notion heatmap embed to
+  reference that exact commit. Requires GitHub contents:write permission.
+  It does not overwrite old SVG files or insert a new embed if the existing
+  placeholder is missing.
+
+For heatmap restoration, run `heatmap_preview` for 2026, download/review the
+artifact and the `HEATMAP_AUDIT` line, and only then run `heatmap_publish`.
+For cumulative book time, start with `book_preview` offset 0, limit 40, and
+confirm the audit before `book_import`; repeat batches with offsets 40, 80,
+120, etc. No automatic scheduling is enabled on this branch.
+
+If the old `main` branch still has a scheduled workflow, disable or
+supersede it before enabling any new schedule to avoid conflicting writes.
