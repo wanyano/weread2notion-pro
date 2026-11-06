@@ -2,71 +2,106 @@ name: read time sync
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 */3 * * *"
+    inputs:
+      mode:
+        description: 'Choose what to preview or restore (preview first)'
+        type: choice
+        options:
+          - preview
+          - import
+          - heatmap_preview
+          - heatmap_publish
+          - book_preview
+          - book_import
+        default: preview
+        required: true
+      year:
+        description: 'For daily or heatmap: calendar year, blank means current'
+        type: string
+        default: ''
+        required: false
+      offset:
+        description: 'For book preview/import: first book index, default 0'
+        type: string
+        default: '0'
+        required: false
+      limit:
+        description: 'For book preview/import: batch size 1-100'
+        type: string
+        default: '40'
+        required: false
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
 jobs:
   sync:
     name: Sync
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
       NOTION_PAGE: ${{ secrets.NOTION_PAGE }}
-      WEREAD_COOKIE: ${{ secrets.WEREAD_COOKIE }}
-      CC_URL: ${{ secrets.CC_URL }}
-      CC_ID: ${{ secrets.CC_ID }}
-      CC_PASSWORD: ${{ secrets.CC_PASSWORD }}
-      HEATMAP_BLOCK_ID: ${{ secrets.HEATMAP_BLOCK_ID }}
-      BOOK_DATABASE_NAME: ${{ vars.BOOK_DATABASE_NAME }}
-      AUTHOR_DATABASE_NAME: ${{ vars.AUTHOR_DATABASE_NAME }}
-      CATEGORY_DATABASE_NAME: ${{ vars.CATEGORY_DATABASE_NAME }}
-      BOOKMARK_DATABASE_NAME: ${{ vars.BOOKMARK_DATABASE_NAME }}
-      REVIEW_DATABASE_NAME: ${{ vars.REVIEW_DATABASE_NAME }}
-      CHAPTER_DATABASE_NAME: ${{ vars.CHAPTER_DATABASE_NAME }}
-      YEAR_DATABASE_NAME: ${{ vars.YEAR_DATABASE_NAME }}
-      WEEK_DATABASE_NAME: ${{ vars.WEEK_DATABASE_NAME }}
-      MONTH_DATABASE_NAME: ${{ vars.MONTH_DATABASE_NAME }}
-      DAY_DATABASE_NAME: ${{ vars.DAY_DATABASE_NAME }}
-      REF: ${{ github.ref }}
-      REPOSITORY: ${{ github.repository }}
-      YEAR: ${{ vars.YEAR }}
+      WEREAD_API_KEY: ${{ secrets.WEREAD_API_KEY }}
+      READ_TIME_MODE: ${{ inputs.mode }}
+      READ_TIME_YEAR: ${{ inputs.year }}
+      HEATMAP_YEAR: ${{ inputs.year }}
+      BOOK_PROGRESS_MODE: ${{ inputs.mode == 'book_import' && 'import' || 'preview' }}
+      BOOK_PROGRESS_OFFSET: ${{ inputs.offset }}
+      BOOK_PROGRESS_LIMIT: ${{ inputs.limit }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: '3.11'
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Remove folder
-        run: rm -rf ./OUT_FOLDER
-      - name: Set default year if not provided
-        run: echo "YEAR=$(date +"%Y")" >> $GITHUB_ENV
-        if: env.YEAR == ''
-      - name: weread heatmap
+          pip install -e .
+      - name: Daily reading time preview or import
+        if: inputs.mode == 'preview' || inputs.mode == 'import'
+        run: read_time
+      - name: Per-book cumulative time preview or import
+        if: inputs.mode == 'book_preview' || inputs.mode == 'book_import'
+        run: python -m weread2notionpro.book_progress_sync
+      - name: Resolve heatmap year
+        if: inputs.mode == 'heatmap_preview' || inputs.mode == 'heatmap_publish'
+        shell: bash
         run: |
-          github_heatmap weread  --year $YEAR  --me "${{secrets.NAME}}" --without-type-name --background-color=${{ vars.background_color||'#FFFFFF'}} --track-color=${{ vars.track_color||'#ACE7AE'}} --special-color1=${{ vars.special_color||'#69C16E'}} --special-color2=${{ vars.special_color2||'#549F57'}} --dom-color=${{ vars.dom_color||'#EBEDF0'}} --text-color=${{ vars.text_color||'#000000'}}
-      - name: Rename weread.svg to a random name
+          if [[ -z "$HEATMAP_YEAR" ]]; then
+            echo "HEATMAP_YEAR=$(date -u +%Y)" >> "$GITHUB_ENV"
+          elif [[ ! "$HEATMAP_YEAR" =~ ^20[0-9]{2}$ ]]; then
+            echo "::error::Invalid year"
+            exit 1
+          fi
+      - name: Render heatmap SVG (no Notion write)
+        if: inputs.mode == 'heatmap_preview' || inputs.mode == 'heatmap_publish'
+        run: python -m weread2notionpro.heatmap_sync --year "$HEATMAP_YEAR"
+      - name: Upload heatmap preview SVG
+        if: inputs.mode == 'heatmap_preview' || inputs.mode == 'heatmap_publish'
+        uses: actions/upload-artifact@v4
+        with:
+          name: weread-heatmap-${{ env.HEATMAP_YEAR }}
+          path: OUT_FOLDER/weread_*.svg
+          if-no-files-found: error
+      - name: Publish SVG to repair branch
+        if: inputs.mode == 'heatmap_publish'
         run: |
-          cd OUT_FOLDER
-          find . -type f ! -name "weread.svg" -exec rm -f {} +
-          cd ..
-          RANDOM_FILENAME=$(uuidgen).svg
-          mv ./OUT_FOLDER/weread.svg ./OUT_FOLDER/$RANDOM_FILENAME
-          echo "Renamed file to $RANDOM_FILENAME"
-      - name: push
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add .
-          git commit -m 'add new heatmap' || echo "nothing to commit"
-          git push || echo "nothing to push"
-      - name: read time sync
-        run: |
-          read_time
-      
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add OUT_FOLDER/weread_*.svg
+          if git diff --cached --quiet; then
+            echo "Heatmap SVG unchanged"
+          else
+            git commit -m "data: refresh WeRead heatmap $HEATMAP_YEAR"
+            git push origin "HEAD:$GITHUB_REF_NAME"
+          fi
+          echo "HEATMAP_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Update existing heatmap embed
+        if: inputs.mode == 'heatmap_publish'
+        run: python -m weread2notionpro.heatmap_sync --year "$HEATMAP_YEAR" --update-embed

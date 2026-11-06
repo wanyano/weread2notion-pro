@@ -1,0 +1,35 @@
+name: Pro compatibility checks
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'weread2notionpro/**'
+      - 'requirements.txt'
+      - 'setup.py'
+      - '.github/workflows/**'
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile all Python modules (no account credentials required)
+        run: python -m compileall -q weread2notionpro
+      - name: Run bookshelf planning unit tests (no credentials)
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Verify main workflows are manual-only in review branch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          for name in ("weread.yml", "read_time.yml"):
+              text = (Path(".github/workflows") / name).read_text()
+              assert "workflow_dispatch" in text, name
+              assert "schedule:" not in text, name
+          print("Manual-only guard confirmed")
+          PY

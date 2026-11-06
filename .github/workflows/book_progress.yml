@@ -1,0 +1,48 @@
+name: book reading progress sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Preview before writing to Notion 书架'
+        type: choice
+        options:
+          - preview
+          - import
+        default: preview
+        required: true
+      offset:
+        description: 'First shelf book index (0, 40, 80...)'
+        type: string
+        default: '0'
+      limit:
+        description: 'Books per run (1-100)'
+        type: string
+        default: '40'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+      NOTION_PAGE: ${{ secrets.NOTION_PAGE }}
+      WEREAD_API_KEY: ${{ secrets.WEREAD_API_KEY }}
+      BOOK_PROGRESS_MODE: ${{ inputs.mode }}
+      BOOK_PROGRESS_OFFSET: ${{ inputs.offset }}
+      BOOK_PROGRESS_LIMIT: ${{ inputs.limit }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          pip install -r requirements.txt
+          pip install -e .
+      - name: Book cumulative reading time preview or import
+        run: python -m weread2notionpro.book_progress_sync
