@@ -186,10 +186,9 @@ class WeReadApi:
         if self.api_key:
             data = self.gateway("/book/getprogress", bookId=bookId)
             book = data.get("book") or {}
-            progress = float(book.get("progress") or 0)
-            if progress <= 1:
-                progress *= 100
-            progress = max(0, min(progress, 100))
+            # Official /book/getprogress returns an integer percentage 0–100;
+            # progress=1 means 1%, not 100%.
+            progress = max(0, min(float(book.get("progress") or 0), 100))
             finished = book.get("finishTime") or 0
             marked_status = 4 if finished or progress >= 100 else (2 if progress > 0 or book.get("updateTime") else 1)
             return {
