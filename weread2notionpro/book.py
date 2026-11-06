@@ -1,7 +1,9 @@
+import os
 import pendulum
 from weread2notionpro.notion_helper import NotionHelper
 from weread2notionpro.weread_api import WeReadApi
 from weread2notionpro import utils
+from weread2notionpro.sync_planning import plan_bookshelf
 from weread2notionpro.config import book_properties_type_dict, tz
 
 TAG_ICON_URL = "https://www.notion.so/icons/tag_gray.svg"
@@ -160,10 +162,30 @@ def main():
     global archive_dict
     notion_books = notion_helper.get_all_book()
     if weread_api.api_key:
+        shelf = weread_api.get_bookshelf()
         notebooks = weread_api.get_notebooklist()
-        books = list(dict.fromkeys(item["bookId"] for item in notebooks if item.get("bookId")))
-        for index, book_id in enumerate(books):
-            insert_book_to_notion(books, index, book_id)
+        plan = plan_bookshelf(shelf, notebooks, notion_books.keys())
+        missing = plan["missing_book_ids"]
+        print(
+            "FULL_SHELF_AUDIT: "
+            f'ebooks={plan["shelf_ebook_count"]}, '
+            f'albums={plan["shelf_album_count"]}, '
+            f'notebook_books={plan["notebook_count"]}, '
+            f'combined_unique={len(plan["book_ids"])}, '
+            f'existing_notion={len(notion_books)}, '
+            f'missing={len(missing)}'
+        )
+        # Only IDs and names. Do not print raw API payloads or credentials.
+        for idx, book_id in enumerate(missing, 1):
+            name = (plan["metadata"].get(book_id) or {}).get("title") or "未知书名"
+            print(f'MISSING_BOOK {idx}/{len(missing)}: {name} (bookId={book_id})')
+        if os.getenv("BOOKSHELF_IMPORT", "false").lower() != "true":
+            print("PREVIEW_ONLY: no missing books created. Re-run with BOOKSHELF_IMPORT=true after reviewing audit.")
+            return
+        # Safe import: create only missing entries, never rewrite existing book pages.
+        print(f"IMPORT_MISSING_BOOKS: creating {len(missing)} entries")
+        for index, book_id in enumerate(missing):
+            insert_book_to_notion(missing, index, book_id)
         return
     bookshelf_books = weread_api.get_bookshelf()
     bookProgress = bookshelf_books.get("bookProgress")
