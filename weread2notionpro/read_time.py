@@ -17,7 +17,7 @@ from weread2notionpro.utils import (
 
 
 def insert_to_notion(page_id, timestamp, duration):
-    parent = {"database_id": notion_helper.day_database_id, "type": "database_id"}
+    parent = notion_helper._parent(notion_helper.day_database_id)
     properties = {
         "标题": get_title(
             format_date(
@@ -82,6 +82,8 @@ HEATMAP_GUIDE = "https://mp.weixin.qq.com/s?__biz=MzI1OTcxOTI4NA==&mid=224748414
 notion_helper = NotionHelper()
 weread_api = WeReadApi()
 def main():
+    if weread_api.api_key:
+        raise RuntimeError("Reading-time sync is not yet supported by the Gateway API. Existing records will not be modified.")
     image_file = get_file()
     if image_file:
         image_url = f"https://raw.githubusercontent.com/{os.getenv('REPOSITORY')}/{os.getenv('REF').split('/')[-1]}/OUT_FOLDER/{image_file}"
