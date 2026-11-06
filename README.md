@@ -1,39 +1,77 @@
-# 将微信读书划线和笔记同步到Notion
+# WeRead2Notion 安全迁移分支
 
+本分支用于从旧版 `weread2notion-pro` 迁移到上游新版 `malinkang/weread2notion`，不会覆盖旧 `main` 分支。
 
-本项目通过Github Action每天定时同步微信读书划线到Notion。
+- 迁移分支：`migration/weread2notion-v1`
+- 上游版本：`1.0.8`
+- 已固定并审计的上游提交：`36daed3aa7fda67088f97fc23c03f63e418220c4`
+- GitHub Actions：仅手动运行，没有定时任务
+- 旧版阅读热力图任务：在本迁移分支中已禁用
+- 旧 `main` 分支、代码与历史：未修改
 
-预览效果：[https://malinkang.notion.site/malinkang/534a7684b30e4a879269313f437f2185](https://malinkang.notion.site/9a311b7413b74c8788752249edd0b256?pvs=25)
+> [!CAUTION]
+> 新版会在检测到书籍笔记变化时删除并重建相应的 Notion 同步页面。不要把首次迁移指向唯一一份旧数据，也不要在新版自动生成的书籍页面中保存无法恢复的个人内容。
 
+## 迁移前：备份和隔离 Notion 数据
 
-## 使用
+首次运行前必须完成以下操作：
 
-> [!IMPORTANT]  
-> 关注公众号获取教程，后续有更新也会第一时间在公众号里同步。
+1. 在 Notion 中打开旧版微信读书主页或数据库，使用 **Export** 导出完整备份；建议选择 Markdown & CSV，并包含子页面。
+2. 再复制一份旧页面/数据库，或复制上游教程提供的新版模板，作为独立的迁移目标。
+3. 让 Notion Integration 只连接到新的迁移目标；保留旧页面不动。
+4. 记录旧版书籍数量，并抽查几本书的划线和笔记数量，供迁移后核对。
 
-![扫码_搜索联合传播样式-标准色版](https://github.com/malinkang/weread2notion/assets/3365208/191900c6-958e-4f9b-908d-a40a54889b5e)
+本仓库不会、也不应保存导出的 Notion 数据或任何密钥。
 
+## 需要自行配置的 GitHub Actions Secrets
 
-## 群
-> [!IMPORTANT]  
-> 欢迎加入群讨论。可以讨论使用中遇到的任何问题，也可以讨论Notion使用，后续我也会在群中分享更多Notion自动化工具。微信群失效的话可以添加我的微信malinkang，我拉你入群。
+进入仓库 **Settings → Secrets and variables → Actions**，创建以下 Repository secrets：
 
-| 微信群 | QQ群 |
-| --- | --- |
-| <div align="center"><img src="https://images.malinkang.com/2024/10/2dfe1f98391e7bd2ee03879e788e5649.jpg" ></div> | <div align="center"><img src="https://images.malinkang.com/2024/10/f6d61b082e78f001cff8ab0a21344fe9.jpeg" width="50%"></div> |
+| Secret | 用途 | 要求 |
+| --- | --- | --- |
+| `WEREAD_API_KEY` | 新版微信读书 Gateway API Key | 必填 |
+| `NOTION_TOKEN` | Notion Integration Token | 必填 |
+| `NOTION_PAGE` | 新的迁移目标页面/数据库链接或 ID | 必填；不要填写唯一的旧数据页面 |
 
+不要在 Issue、PR、提交、Actions 日志或聊天中粘贴这些值。旧版 `WEREAD_COOKIE` 以及 `CC_URL`、`CC_ID`、`CC_PASSWORD` 等不再用于新版迁移。
 
-## 捐赠
+上游也支持 `NOTION_DATABASE_ID` 和 `NOTION_DATA_SOURCE_ID`。为减少误配置，本迁移分支固定使用 `NOTION_PAGE`，三者不要混用。
 
-如果你觉得本项目帮助了你，请作者喝一杯咖啡，你的支持是作者最大的动力。本项目会持续更新。
+## 首次手动验证
 
-| 支付宝支付 | 微信支付 |
-| --- | --- |
-| <div align="center"><img src="https://images.malinkang.com/2024/03/7fd0feb1145f19fab3821ff1d4631f85.jpg" width="50%"></div> | <div align="center"><img src="https://images.malinkang.com/2024/03/d34f577490a32d4440c8a22f57af41da.jpg" width="50%"></div> |
+1. 打开仓库的 **Actions** 页面，选择原有的 WeRead 工作流。
+2. 点击 **Run workflow**，务必把分支切换为 `migration/weread2notion-v1`，不要选择 `main`。
+3. 勾选已备份并使用独立迁移目标的确认项，然后运行。
+4. 工作流只检查 Secrets 是否存在，不会打印它们的值。
+5. 在 Notion 新目标中核对：
+   - 书籍是否创建；
+   - 划线和笔记数量是否合理；
+   - 中文、封面、章节和长笔记是否正常；
+   - 再次手动运行时是否仅重建有更新的书籍页面；
+   - 旧版 Notion 页面是否完全未变化。
 
-## 其他项目
-* [WeRead2Notion-Pro](https://github.com/malinkang/weread2notion-pro)
-* [WeRead2Notion](https://github.com/malinkang/weread2notion)
-* [Podcast2Notion](https://github.com/malinkang/podcast2notion)
-* [Douban2Notion](https://github.com/malinkang/douban2notion)
-* [Keep2Notion](https://github.com/malinkang/keep2notion)
+若任一项异常，停止运行，保留旧数据与导出文件，并查看 Actions 的错误步骤。不要用包含密钥的截图或日志公开求助。
+
+## 定时同步
+
+本分支故意没有 `schedule`。只有在完成备份、首次手动验证和数量抽查后，才应在独立新版仓库或正式分支中加入定时任务。
+
+上游示例的定时表达式是每天 UTC 00:00（北京时间 08:00）：
+
+```yaml
+schedule:
+  - cron: "0 0 * * *"
+```
+
+不要在验证前启用定时同步，也不要把新版直接指向旧版唯一数据副本。
+
+## 代码与安全核验摘要
+
+- 新版使用 `WEREAD_API_KEY`，不再依赖微信读书 Cookie。
+- 上游 Action 固定到已审计提交，避免 `@main` 后续变化直接进入定时任务。
+- 权限限制为 `contents: read`。
+- 工作流没有检出或执行旧 Pro 包，因此不会走旧版 Cookie、Cloudflare 或旧数据库写入逻辑。
+- 新版源代码包含删除并重建已同步书籍页面的逻辑，因此 Notion 备份和独立目标是强制前置条件。
+- Secrets 只能由仓库所有者在 GitHub 设置中填写；本分支不包含任何明文密钥。
+
+完整上游说明：https://github.com/malinkang/weread2notion
