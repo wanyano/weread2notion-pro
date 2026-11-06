@@ -93,7 +93,11 @@ class WeReadApi:
 
     def get_bookshelf(self):
         if self.api_key:
-            raise NotImplementedError("Gateway has no compatible bookshelf endpoint; use notebook-only book sync")
+            # Official WeRead skill 1.0.5: /shelf/sync takes no parameters.
+            data = self.gateway("/shelf/sync")
+            if not isinstance(data.get("books"), list):
+                raise ValueError("WeRead shelf response has no books[] array")
+            return data
         self.session.get(WEREAD_URL)
         r = self.session.get(
             "https://i.weread.qq.com/shelf/sync?synckey=0&teenmode=0&album=1&onlyBookid=0"
