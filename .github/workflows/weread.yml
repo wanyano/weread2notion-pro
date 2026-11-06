@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       backup_confirmed:
-        description: "I exported or duplicated the existing Notion data and selected a separate migration target"
+        description: "I exported the old Notion data and selected a fresh copy of the official WeRead2Notion template"
         required: true
         type: boolean
         default: false
