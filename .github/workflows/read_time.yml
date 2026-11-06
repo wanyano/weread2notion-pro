@@ -4,17 +4,31 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Preview only first; import explicitly after reviewing logs'
+        description: 'Choose what to preview or restore (preview first)'
         type: choice
         options:
           - preview
           - import
+          - heatmap_preview
+          - heatmap_publish
+          - book_preview
+          - book_import
         default: preview
         required: true
       year:
-        description: 'Calendar year to restore; blank means current year'
+        description: 'For daily or heatmap: calendar year, blank means current'
         type: string
         default: ''
+        required: false
+      offset:
+        description: 'For book preview/import: first book index, default 0'
+        type: string
+        default: '0'
+        required: false
+      limit:
+        description: 'For book preview/import: batch size 1-100'
+        type: string
+        default: '40'
         required: false
 
 concurrency:
@@ -26,13 +40,17 @@ jobs:
     name: Sync
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     env:
       NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
       NOTION_PAGE: ${{ secrets.NOTION_PAGE }}
       WEREAD_API_KEY: ${{ secrets.WEREAD_API_KEY }}
       READ_TIME_MODE: ${{ inputs.mode }}
       READ_TIME_YEAR: ${{ inputs.year }}
+      HEATMAP_YEAR: ${{ inputs.year }}
+      BOOK_PROGRESS_MODE: ${{ inputs.mode == 'book_import' && 'import' || 'preview' }}
+      BOOK_PROGRESS_OFFSET: ${{ inputs.offset }}
+      BOOK_PROGRESS_LIMIT: ${{ inputs.limit }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,5 +63,45 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -e .
-      - name: Reading time preview or import
+      - name: Daily reading time preview or import
+        if: inputs.mode == 'preview' || inputs.mode == 'import'
         run: read_time
+      - name: Per-book cumulative time preview or import
+        if: inputs.mode == 'book_preview' || inputs.mode == 'book_import'
+        run: python -m weread2notionpro.book_progress_sync
+      - name: Resolve heatmap year
+        if: inputs.mode == 'heatmap_preview' || inputs.mode == 'heatmap_publish'
+        shell: bash
+        run: |
+          if [[ -z "$HEATMAP_YEAR" ]]; then
+            echo "HEATMAP_YEAR=$(date -u +%Y)" >> "$GITHUB_ENV"
+          elif [[ ! "$HEATMAP_YEAR" =~ ^20[0-9]{2}$ ]]; then
+            echo "::error::Invalid year"
+            exit 1
+          fi
+      - name: Render heatmap SVG (no Notion write)
+        if: inputs.mode == 'heatmap_preview' || inputs.mode == 'heatmap_publish'
+        run: python -m weread2notionpro.heatmap_sync --year "$HEATMAP_YEAR"
+      - name: Upload heatmap preview SVG
+        if: inputs.mode == 'heatmap_preview' || inputs.mode == 'heatmap_publish'
+        uses: actions/upload-artifact@v4
+        with:
+          name: weread-heatmap-${{ env.HEATMAP_YEAR }}
+          path: OUT_FOLDER/weread_*.svg
+          if-no-files-found: error
+      - name: Publish SVG to repair branch
+        if: inputs.mode == 'heatmap_publish'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add OUT_FOLDER/weread_*.svg
+          if git diff --cached --quiet; then
+            echo "Heatmap SVG unchanged"
+          else
+            git commit -m "data: refresh WeRead heatmap $HEATMAP_YEAR"
+            git push origin "HEAD:$GITHUB_REF_NAME"
+          fi
+          echo "HEATMAP_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Update existing heatmap embed
+        if: inputs.mode == 'heatmap_publish'
+        run: python -m weread2notionpro.heatmap_sync --year "$HEATMAP_YEAR" --update-embed
