@@ -52,7 +52,11 @@ class NotionHelper:
     block_type = "callout"
     sync_bookmark = True
     def __init__(self):
-        self.client = Client(auth=os.getenv("NOTION_TOKEN"), log_level=logging.ERROR)
+        if not os.getenv("NOTION_TOKEN"):
+            raise ValueError("NOTION_TOKEN is required")
+        self.client = Client(auth=os.getenv("NOTION_TOKEN"), log_level=logging.ERROR, notion_version="2026-03-11")
+        self.database_id_dict = {}
+        self._data_source_cache = {}
         self.__cache = {}
         self.page_id = self.extract_page_id(os.getenv("NOTION_PAGE"))
         self.search_database(self.page_id)
@@ -95,13 +99,13 @@ class NotionHelper:
         self.setting_database_id = self.database_id_dict.get(
             self.database_name_dict.get("SETTING_DATABASE_NAME")
         )
-        self.update_book_database()
-        if self.read_database_id is None:
-            self.create_database()
-        if self.setting_database_id is None:
-            self.create_setting_database()
+        if not self.book_database_id or not self.bookmark_database_id or not self.review_database_id:
+            raise ValueError("Missing required Pro databases: 书架 / 划线 / 笔记. Check NOTION_PAGE and integration access.")
+        # Never create or alter a user's Notion schema as a side effect of startup.
         if self.setting_database_id:
             self.insert_to_setting_database()
+        else:
+            print("Optional 设置 database not found; using safe defaults.")
 
     def extract_page_id(self, notion_url):
         # 正则表达式匹配 32 个字符的 Notion page_id
@@ -115,7 +119,19 @@ class NotionHelper:
             raise Exception(f"获取NotionID失败，请检查输入的Url是否正确")
 
     def search_database(self, block_id):
-        children = self.client.blocks.children.list(block_id=block_id)["results"]
+        children = []
+        cursor = None
+        while True:
+            options = {"block_id": block_id, "page_size": 100}
+            if cursor:
+                options["start_cursor"] = cursor
+            response = self.client.blocks.children.list(**options)
+            children.extend(response.get("results", []))
+            if not response.get("has_more"):
+                break
+            cursor = response.get("next_cursor")
+            if not cursor:
+                raise RuntimeError("Notion block pagination failed")
         # 遍历子块
         for child in children:
             # 检查子块的类型
@@ -132,9 +148,9 @@ class NotionHelper:
 
     def update_book_database(self):
         """更新数据库"""
-        response = self.client.databases.retrieve(database_id=self.book_database_id)
-        id = response.get("id")
-        properties = response.get("properties")
+        source_id = self._source_id(self.book_database_id)
+        response = self.client.request(path=f"data_sources/{source_id}", method="GET")
+        properties = response.get("properties") or {}
         update_properties = {}
         if (
             properties.get("阅读时长") is None
@@ -163,7 +179,7 @@ class NotionHelper:
             update_properties["豆瓣短评"] = {"rich_text": {}}
         """NeoDB先不添加了，现在受众还不广，可能有的小伙伴不知道是干什么的"""
         if len(update_properties) > 0:
-            self.client.databases.update(database_id=id, properties=update_properties)
+            self.client.request(path=f"data_sources/{source_id}", method="PATCH", body={"properties": update_properties})
 
     def create_database(self):
         title = [
@@ -205,9 +221,6 @@ class NotionHelper:
         ]
         properties = {
             "标题": {"title": {}},
-            "NotinToken": {"rich_text": {}},
-            "NotinPage": {"rich_text": {}},
-            "WeReadCookie": {"rich_text": {}},
             "根据划线颜色设置文字颜色": {"checkbox": {}},
             "同步书签": {"checkbox": {}},
             # "Cookie状态": {
@@ -244,15 +257,12 @@ class NotionHelper:
         properties = {
             "标题": {"title": [{"type": "text", "text": {"content": "设置"}}]},
             "最后同步时间": {"date": {"start": pendulum.now("Asia/Shanghai").isoformat()}},
-            "NotinToken": {"rich_text": [{"type": "text", "text": {"content": os.getenv("NOTION_TOKEN")}}]},
-            "NotinPage": {"rich_text": [{"type": "text", "text": {"content": os.getenv("NOTION_PAGE")}}]},
-            "WeReadCookie": {"rich_text": [{"type": "text", "text": {"content": os.getenv("WEREAD_COOKIE")}}]},
         }
         if existing_pages:
             remote_properties = existing_pages[0].get("properties")
             self.show_color = get_property_value(remote_properties.get("根据划线颜色设置文字颜色"))
             self.sync_bookmark = get_property_value(remote_properties.get("同步书签"))
-            self.block_type = get_property_value(remote_properties.get("样式"))
+            self.block_type = get_property_value(remote_properties.get("样式")) or "callout"
             page_id = existing_pages[0].get("id")
             self.client.pages.update(page_id=page_id, properties=properties)
         else:
@@ -260,7 +270,7 @@ class NotionHelper:
             properties["同步书签"] = {"checkbox": True}
             properties["样式"] = {"select": {"name": "callout"}}
             self.client.pages.create(
-                parent={"database_id": self.setting_database_id},
+                parent=self._parent(self.setting_database_id),
                 properties=properties,
             )
   
@@ -328,9 +338,9 @@ class NotionHelper:
         if key in self.__cache:
             return self.__cache.get(key)
         filter = {"property": "标题", "title": {"equals": name}}
-        response = self.client.databases.query(database_id=id, filter=filter)
+        response = self.query(database_id=id, filter=filter)
         if len(response.get("results")) == 0:
-            parent = {"database_id": id, "type": "database_id"}
+            parent = self._parent(id)
             properties["标题"] = get_title(name)
             page_id = self.client.pages.create(
                 parent=parent, properties=properties, icon=get_icon(icon)
@@ -359,7 +369,7 @@ class NotionHelper:
             create_time = timestamp_to_date(int(bookmark.get("createTime")))
             properties["Date"] = get_date(create_time.strftime("%Y-%m-%d %H:%M:%S"))
             self.get_date_relation(properties, create_time)
-        parent = {"database_id": self.bookmark_database_id, "type": "database_id"}
+        parent = self._parent(self.bookmark_database_id)
         self.create_page(parent, properties, icon)
 
     def insert_review(self, id, review):
@@ -385,7 +395,7 @@ class NotionHelper:
             create_time = timestamp_to_date(int(review.get("createTime")))
             properties["Date"] = get_date(create_time.strftime("%Y-%m-%d %H:%M:%S"))
             self.get_date_relation(properties, create_time)
-        parent = {"database_id": self.review_database_id, "type": "database_id"}
+        parent = self._parent(self.review_database_id)
         self.create_page(parent, properties, icon)
 
     def insert_chapter(self, id, chapter):
@@ -401,7 +411,7 @@ class NotionHelper:
             "level": {"number": chapter.get("level")},
             "书籍": {"relation": [{"id": id}]},
         }
-        parent = {"database_id": self.chapter_database_id, "type": "database_id"}
+        parent = self._parent(self.chapter_database_id)
         self.create_page(parent, properties, icon)
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
@@ -417,18 +427,45 @@ class NotionHelper:
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def create_page(self, parent, properties, icon):
-        return self.client.pages.create(parent=parent, properties=properties, icon=icon)
+        return self.client.pages.create(parent=self._resolve_parent(parent), properties=properties, icon=icon)
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def create_book_page(self, parent, properties, icon):
         return self.client.pages.create(
-            parent=parent, properties=properties, icon=icon, cover=icon
+            parent=self._resolve_parent(parent), properties=properties, icon=icon, cover=icon
         )
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
+    def _source_id(self, database_id):
+        """Resolve an existing Notion database to its single data source (2026 API)."""
+        if not database_id:
+            raise ValueError("Missing Notion database ID")
+        if database_id in self._data_source_cache:
+            return self._data_source_cache[database_id]
+        db = self.client.request(path=f"databases/{database_id}", method="GET")
+        sources = db.get("data_sources") or []
+        if len(sources) != 1:
+            raise ValueError(f"Database {database_id} has {len(sources)} data sources; expected exactly one")
+        source_id = sources[0]["id"]
+        self._data_source_cache[database_id] = source_id
+        return source_id
+
+    def _parent(self, database_id):
+        return {"type": "data_source_id", "data_source_id": self._source_id(database_id)}
+
+    def _resolve_parent(self, parent):
+        if "database_id" in parent:
+            return self._parent(parent["database_id"])
+        return parent
+
     def query(self, **kwargs):
-        kwargs = {k: v for k, v in kwargs.items() if v}
-        return self.client.databases.query(**kwargs)
+        database_id = kwargs.pop("database_id", None)
+        options = {k: v for k, v in kwargs.items() if v is not None}
+        return self.client.request(
+            path=f"data_sources/{self._source_id(database_id)}/query",
+            method="POST",
+            body=options,
+        )
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def get_block_children(self, id):
@@ -451,7 +488,7 @@ class NotionHelper:
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def delete_block(self, block_id):
-        return self.client.blocks.delete(block_id=block_id)
+        raise RuntimeError("Destructive block deletion is disabled in the safe-sync branch")
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def get_all_book(self):
@@ -487,11 +524,8 @@ class NotionHelper:
         has_more = True
         start_cursor = None
         while has_more:
-            response = self.client.databases.query(
-                database_id=database_id,
-                filter=filter,
-                start_cursor=start_cursor,
-                page_size=100,
+            response = self.query(
+                database_id=database_id, filter=filter, start_cursor=start_cursor, page_size=100
             )
             start_cursor = response.get("next_cursor")
             has_more = response.get("has_more")
@@ -505,10 +539,8 @@ class NotionHelper:
         has_more = True
         start_cursor = None
         while has_more:
-            response = self.client.databases.query(
-                database_id=database_id,
-                start_cursor=start_cursor,
-                page_size=100,
+            response = self.query(
+                database_id=database_id, start_cursor=start_cursor, page_size=100
             )
             start_cursor = response.get("next_cursor")
             has_more = response.get("has_more")
