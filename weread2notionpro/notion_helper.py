@@ -102,9 +102,9 @@ class NotionHelper:
         if not self.book_database_id or not self.bookmark_database_id or not self.review_database_id:
             raise ValueError("Missing required Pro databases: 书架 / 划线 / 笔记. Check NOTION_PAGE and integration access.")
         # Never create or alter a user's Notion schema as a side effect of startup.
-        if self.setting_database_id:
+        if self.setting_database_id and os.getenv("NOTION_READ_ONLY", "").lower() != "true":
             self.insert_to_setting_database()
-        else:
+        elif not self.setting_database_id:
             print("Optional 设置 database not found; using safe defaults.")
 
     def extract_page_id(self, notion_url):
