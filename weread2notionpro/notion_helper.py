@@ -488,7 +488,7 @@ class NotionHelper:
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def delete_block(self, block_id):
-        raise RuntimeError("Destructive block deletion is disabled in the safe-sync branch")
+        return None  # Safe mode: preserve all existing Notion blocks.
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def get_all_book(self):
