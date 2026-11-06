@@ -265,9 +265,17 @@ class WeReadApi:
 
 
     
+    def get_read_statistics(self, mode="monthly", base_time=0):
+        """Official WeRead Gateway reading statistics; durations are seconds."""
+        if not self.api_key:
+            raise RuntimeError("Gateway reading statistics require WEREAD_API_KEY")
+        if mode not in ("weekly", "monthly", "annually", "overall"):
+            raise ValueError("Unsupported reading statistics period")
+        return self.gateway("/readdata/detail", mode=mode, baseTime=int(base_time))
+
     def get_api_data(self):
         if self.api_key:
-            raise NotImplementedError("Reading-time API not verified for gateway mode; disabled to protect existing records")
+            raise NotImplementedError("Use get_read_statistics() with a time period for Gateway reading-time sync")
         self.session.get(WEREAD_URL)
         r = self.session.get(WEREAD_HISTORY_URL)
         if r.ok:
