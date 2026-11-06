@@ -1,0 +1,79 @@
+name: read heatmap sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Preview SVG first; publish only after reviewing the artifact'
+        type: choice
+        options:
+          - preview
+          - publish
+        default: preview
+        required: true
+      year:
+        description: 'Calendar year; blank means current year'
+        type: string
+        default: ''
+        required: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  heatmap:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+      NOTION_PAGE: ${{ secrets.NOTION_PAGE }}
+      HEATMAP_YEAR: ${{ inputs.year }}
+      HEATMAP_MODE: ${{ inputs.mode }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e .
+      - name: Validate year
+        shell: bash
+        run: |
+          if [[ -z "$HEATMAP_YEAR" ]]; then
+            echo "HEATMAP_YEAR=$(date -u +%Y)" >> "$GITHUB_ENV"
+          elif [[ ! "$HEATMAP_YEAR" =~ ^20[0-9]{2}$ ]]; then
+            echo "::error::Year must be a four digit year starting with 20"
+            exit 1
+          fi
+      - name: Generate heatmap from Notion 日
+        run: python -m weread2notionpro.heatmap_sync --year "$HEATMAP_YEAR"
+      - name: Upload preview SVG
+        uses: actions/upload-artifact@v4
+        with:
+          name: weread-heatmap-${{ env.HEATMAP_YEAR }}
+          path: OUT_FOLDER/weread_*.svg
+          if-no-files-found: error
+      - name: Publish SVG to repair branch
+        if: inputs.mode == 'publish'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add OUT_FOLDER/weread_*.svg
+          if git diff --cached --quiet; then
+            echo "No heatmap file change"
+          else
+            git commit -m "data: update WeRead daily heatmap ${HEATMAP_YEAR}"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+          echo "HEATMAP_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Update existing Notion heatmap embed
+        if: inputs.mode == 'publish'
+        run: python -m weread2notionpro.heatmap_sync --year "$HEATMAP_YEAR" --update-embed
