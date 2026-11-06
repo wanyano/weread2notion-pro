@@ -19,7 +19,7 @@ class ReadingTimePlanningTests(unittest.TestCase):
         self.assertEqual(datetime.fromtimestamp(one, timezone.utc).hour, 16)
 
     def test_fails_closed_without_daily_data(self):
-        with self.assertRaisesRegex(ValueError, "no usable daily"):
+        with self.assertRaisesRegex(ValueError, "daily readTimes"):
             monthly_daily_seconds({"totalReadTime": 900}, 2026, 11)
 
     def test_rejects_daily_bucket_outside_month(self):
