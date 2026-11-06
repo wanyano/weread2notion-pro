@@ -21,6 +21,8 @@ jobs:
           python-version: '3.11'
       - name: Compile all Python modules (no account credentials required)
         run: python -m compileall -q weread2notionpro
+      - name: Run bookshelf planning unit tests (no credentials)
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify main workflows are manual-only in review branch
         run: |
           python - <<'PY'
