@@ -50,12 +50,12 @@ def insert_book_to_notion(books, index, bookId):
     )
     book["开始阅读时间"] = book.get("beginReadingDate")
     book["最后阅读时间"] = book.get("lastReadingDate")
-    cover = book.get("cover").replace("/s_", "/t7_")
+    cover = (book.get("cover") or "").replace("/s_", "/t7_")
     if not cover or not cover.strip() or not cover.startswith("http"):
         cover = BOOK_ICON_URL
     if bookId not in notion_books:
         book["书名"] = book.get("title")
-        book["BookId"] = book.get("bookId")
+        book["BookId"] = bookId
         book["ISBN"] = book.get("isbn")
         book["链接"] = weread_api.get_url(bookId)
         book["简介"] = book.get("intro")
@@ -63,7 +63,7 @@ def insert_book_to_notion(books, index, bookId):
             notion_helper.get_relation_id(
                 x, notion_helper.author_database_id, USER_ICON_URL
             )
-            for x in book.get("author").split(" ")
+            for x in (book.get("author") or "").split(" ") if x
         ]
         if book.get("categories"):
             book["分类"] = [
@@ -82,7 +82,7 @@ def insert_book_to_notion(books, index, bookId):
     print(
         f"正在插入《{book.get('title')}》,一共{len(books)}本，当前是第{index+1}本。"
     )
-    parent = {"database_id": notion_helper.book_database_id, "type": "database_id"}
+    parent = notion_helper._parent(notion_helper.book_database_id)
     result = None
     if bookId in notion_books:
         result = notion_helper.update_page(
@@ -125,7 +125,7 @@ def insert_read_data(page_id, readTimes):
 
 
 def insert_to_notion(page_id, timestamp, duration, book_database_id):
-    parent = {"database_id": notion_helper.read_database_id, "type": "database_id"}
+    parent = notion_helper._parent(notion_helper.read_database_id)
     properties = {
         "标题": utils.get_title(
             pendulum.from_timestamp(timestamp, tz=tz).to_date_string()
@@ -158,8 +158,14 @@ notion_books = {}
 def main():
     global notion_books
     global archive_dict
-    bookshelf_books = weread_api.get_bookshelf()
     notion_books = notion_helper.get_all_book()
+    if weread_api.api_key:
+        notebooks = weread_api.get_notebooklist()
+        books = list(dict.fromkeys(item["bookId"] for item in notebooks if item.get("bookId")))
+        for index, book_id in enumerate(books):
+            insert_book_to_notion(books, index, book_id)
+        return
+    bookshelf_books = weread_api.get_bookshelf()
     bookProgress = bookshelf_books.get("bookProgress")
     bookProgress = {book.get("bookId"): book for book in bookProgress}
     for archive in bookshelf_books.get("archive"):
