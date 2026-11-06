@@ -23,9 +23,28 @@ WEREAD_HISTORY_URL = "https://i.weread.qq.com/readdata/summary?synckey=0"
 
 class WeReadApi:
     def __init__(self):
-        self.cookie = self.get_cookie()
+        self.api_key = (os.getenv("WEREAD_API_KEY") or "").strip()
         self.session = requests.Session()
-        self.session.cookies = self.parse_cookie_string()
+        if self.api_key:
+            self.session.headers.update({"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"})
+        else:
+            self.cookie = self.get_cookie()
+            self.session.cookies = self.parse_cookie_string()
+
+    def gateway(self, api_name, **kwargs):
+        """WeRead skill v1.0.5 gateway. Never log credentials or response bodies."""
+        response = self.session.post(
+            "https://i.weread.qq.com/api/agent/gateway",
+            json={"api_name": api_name, "skill_version": "1.0.5", **kwargs},
+            timeout=30,
+        )
+        response.raise_for_status()
+        data = response.json()
+        if data.get("upgrade_info"):
+            raise RuntimeError(f"WeRead gateway skill upgrade required: {data['upgrade_info']}")
+        if data.get("errcode", 0) != 0:
+            raise RuntimeError(f"WeRead gateway request failed: {api_name}, code={data.get('errcode')}")
+        return data
 
     def try_get_cloud_cookie(self, url, id, password):
         if url.endswith("/"):
@@ -73,6 +92,8 @@ class WeReadApi:
         return cookiejar
 
     def get_bookshelf(self):
+        if self.api_key:
+            raise NotImplementedError("Gateway has no compatible bookshelf endpoint; use notebook-only book sync")
         self.session.get(WEREAD_URL)
         r = self.session.get(
             "https://i.weread.qq.com/shelf/sync?synckey=0&teenmode=0&album=1&onlyBookid=0"
@@ -91,6 +112,26 @@ class WeReadApi:
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def get_notebooklist(self):
         """获取笔记本列表"""
+        if self.api_key:
+            books, last_sort, seen = [], None, set()
+            for _ in range(1000):
+                params = {"count": 100}
+                if last_sort is not None:
+                    params["lastSort"] = last_sort
+                data = self.gateway("/user/notebooks", **params)
+                batch = data.get("books") or []
+                books.extend(batch)
+                if not data.get("hasMore"):
+                    break
+                if not batch:
+                    raise RuntimeError("WeRead notebook pagination returned an empty batch")
+                last_sort = batch[-1].get("sort")
+                if last_sort in seen:
+                    raise RuntimeError("WeRead notebook pagination did not advance")
+                seen.add(last_sort)
+            else:
+                raise RuntimeError("WeRead notebook pagination exceeded limit")
+            return sorted(books, key=lambda b: b.get("sort") or 0)
         self.session.get(WEREAD_URL)
         r = self.session.get(WEREAD_NOTEBOOKS_URL)
         if r.ok:
@@ -106,6 +147,8 @@ class WeReadApi:
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def get_bookinfo(self, bookId):
         """获取书的详情"""
+        if self.api_key:
+            return self.gateway("/book/info", bookId=bookId)
         self.session.get(WEREAD_URL)
         params = dict(bookId=bookId)
         r = self.session.get(WEREAD_BOOK_INFO, params=params)
@@ -119,6 +162,8 @@ class WeReadApi:
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def get_bookmark_list(self, bookId):
+        if self.api_key:
+            return self.gateway("/book/bookmarklist", bookId=bookId).get("updated") or []
         self.session.get(WEREAD_URL)
         params = dict(bookId=bookId)
         r = self.session.get(WEREAD_BOOKMARKLIST_URL, params=params)
@@ -134,6 +179,20 @@ class WeReadApi:
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def get_read_info(self, bookId):
+        if self.api_key:
+            data = self.gateway("/book/getprogress", bookId=bookId)
+            book = data.get("book") or {}
+            progress = float(book.get("progress") or 0)
+            if progress <= 1:
+                progress *= 100
+            progress = max(0, min(progress, 100))
+            finished = book.get("finishTime") or 0
+            marked_status = 4 if finished or progress >= 100 else (2 if progress > 0 or book.get("updateTime") else 1)
+            return {
+                "markedStatus": marked_status, "readingTime": book.get("recordReadingTime") or 0,
+                "readingProgress": progress, "finishedDate": finished,
+                "readDetail": {}, "bookInfo": {},
+            }
         self.session.get(WEREAD_URL)
         params = dict(
             noteCount=1,
@@ -162,6 +221,28 @@ class WeReadApi:
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def get_review_list(self, bookId):
+        if self.api_key:
+            reviews, synckey, seen = [], 0, set()
+            for _ in range(1000):
+                data = self.gateway("/review/list/mine", bookid=bookId, synckey=synckey, count=100)
+                batch = data.get("reviews") or []
+                for wrapper in batch:
+                    note = dict(wrapper.get("review") or {})
+                    if not note or note.get("type") not in (1, 4):
+                        continue
+                    if note.get("type") == 4:
+                        note["chapterUid"] = 1000000
+                    reviews.append(note)
+                if not data.get("hasMore"):
+                    break
+                new_key = data.get("synckey")
+                if not batch or new_key is None or new_key in seen:
+                    raise RuntimeError("WeRead review pagination did not advance")
+                seen.add(new_key)
+                synckey = new_key
+            else:
+                raise RuntimeError("WeRead review pagination exceeded limit")
+            return reviews
         self.session.get(WEREAD_URL)
         params = dict(bookId=bookId, listType=11, mine=1, syncKey=0)
         r = self.session.get(WEREAD_REVIEW_LIST_URL, params=params)
@@ -182,6 +263,8 @@ class WeReadApi:
 
     
     def get_api_data(self):
+        if self.api_key:
+            raise NotImplementedError("Reading-time API not verified for gateway mode; disabled to protect existing records")
         self.session.get(WEREAD_URL)
         r = self.session.get(WEREAD_HISTORY_URL)
         if r.ok:
@@ -195,6 +278,11 @@ class WeReadApi:
 
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def get_chapter_info(self, bookId):
+        if self.api_key:
+            data = self.gateway("/book/chapterinfo", bookId=bookId)
+            chapter = {item["chapterUid"]: item for item in (data.get("chapters") or []) if "chapterUid" in item}
+            chapter[1000000] = {"chapterUid": 1000000, "chapterIdx": 1000000, "title": "点评", "level": 1}
+            return chapter
         self.session.get(WEREAD_URL)
         body = {"bookIds": [bookId], "synckeys": [0], "teenmode": 0}
         r = self.session.post(WEREAD_CHAPTER_INFO, json=body)
