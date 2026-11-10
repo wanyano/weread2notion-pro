@@ -1,9 +1,4 @@
-"""Pure helpers for safe, per-calendar-year WeRead reading-time reconciliation.
-
-WeRead /readdata/detail monthly readTimes are per-day seconds keyed by Unix
-timestamps, not minutes. The existing Pro 日 database also stores seconds.
-No Notion writes are performed in this module.
-"""
+"""Pure helpers for safe, monotonic WeRead reading-time reconciliation."""
 from datetime import datetime, timedelta, timezone
 
 TZ = timezone(timedelta(hours=8))
@@ -15,10 +10,7 @@ def local_midnight_timestamp(day):
 
 
 def monthly_daily_seconds(payload, year, month):
-    """Validate the monthly Gateway response and extract day -> integer seconds.
-
-    Fail closed on malformed/ambiguous statistics. A truly empty month is OK.
-    """
+    """Validate one monthly Gateway response and return day -> seconds."""
     if not isinstance(payload, dict):
         raise ValueError("WeRead monthly statistics must be a JSON object")
     times = payload.get("readTimes")
@@ -54,12 +46,7 @@ def monthly_daily_seconds(payload, year, month):
 
 
 def daily_reconciliation(source_days, existing_rows, year):
-    """Plan creates/updates without deleting or resetting any existing entries.
-
-    Existing rows: {id, timestamp, duration}; duplicate dates fail closed.
-    Source zero-duration days are ignored so a missing bucket cannot erase
-    previously recorded reading time.
-    """
+    """Plan monotonic creates/updates without deleting or reducing history."""
     if not isinstance(source_days, dict):
         raise ValueError("Expected a day-to-seconds mapping")
     by_day = {}
@@ -76,9 +63,18 @@ def daily_reconciliation(source_days, existing_rows, year):
         day = day_dt.date().isoformat()
         if day in by_day:
             raise ValueError("Duplicate Notion day records; resolve before importing")
+        duration = item.get("duration")
+        if duration is not None and (
+            not isinstance(duration, (int, float))
+            or isinstance(duration, bool)
+            or duration < 0
+            or int(duration) != duration
+        ):
+            raise ValueError("Invalid existing Notion daily duration")
         by_day[day] = item
 
-    creates, updates, unchanged = [], [], 0
+    creates, updates = [], []
+    unchanged = preserved = 0
     for day, seconds in sorted(source_days.items()):
         parsed = datetime.fromisoformat(day)
         if parsed.year != year:
@@ -86,17 +82,28 @@ def daily_reconciliation(source_days, existing_rows, year):
         if not isinstance(seconds, int) or isinstance(seconds, bool) or seconds < 0:
             raise ValueError("Invalid source daily duration")
         if seconds == 0:
-            # Never create empty days or zero out historical records.
             continue
         current = by_day.get(day)
         timestamp = local_midnight_timestamp(day)
         if current is None:
             creates.append({"day": day, "timestamp": timestamp, "seconds": seconds})
-        elif current.get("duration") != seconds:
+            continue
+        current_seconds = current.get("duration")
+        if current_seconds is None or seconds > current_seconds:
             updates.append({
-                "day": day, "timestamp": timestamp, "seconds": seconds,
+                "day": day,
+                "timestamp": timestamp,
+                "seconds": seconds,
                 "page_id": current["id"],
             })
-        else:
+        elif seconds == current_seconds:
             unchanged += 1
-    return {"create": creates, "update": updates, "unchanged": unchanged}
+        else:
+            preserved += 1
+    return {
+        "create": creates,
+        "update": updates,
+        "unchanged": unchanged,
+        "preserved": preserved,
+    }
+
