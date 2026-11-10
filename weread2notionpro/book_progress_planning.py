@@ -72,7 +72,7 @@ def book_state_update(source, existing):
         "已读"
         if finished
         else "在读"
-        if progress > 0 or (seconds or 0) > 0 or source.get("updateTime")
+        if progress > 0 or (seconds or 0) > 0
         else "想读"
     )
     source_progress = 1.0 if finished else float(progress) / 100
