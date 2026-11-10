@@ -13,6 +13,7 @@ from weread2notionpro.weread_api import WeReadApi
 def prepare_changes(api, notion_books, ordered_ids, request_interval=1.1):
     changes, preserved, missing = [], 0, 0
     time_updates = progress_updates = status_updates = 0
+    status_to_reading = status_to_finished = 0
     for index, book_id in enumerate(ordered_ids, 1):
         record = notion_books.get(book_id)
         if not record:
@@ -34,6 +35,8 @@ def prepare_changes(api, notion_books, ordered_ids, request_interval=1.1):
         time_updates += planned["reading_time"] is not None
         progress_updates += planned["reading_progress"] is not None
         status_updates += planned["status"] is not None
+        status_to_reading += planned["status"] == "在读"
+        status_to_finished += planned["status"] == "已读"
         changes.append({
             "page_id": record["pageId"],
             "book_id": book_id,
@@ -46,6 +49,8 @@ def prepare_changes(api, notion_books, ordered_ids, request_interval=1.1):
         "time_updates": time_updates,
         "progress_updates": progress_updates,
         "status_updates": status_updates,
+        "status_to_reading": status_to_reading,
+        "status_to_finished": status_to_finished,
     }
 
 
@@ -76,7 +81,10 @@ def main():
         f'BOOK_PROGRESS_AUDIT: mode={mode} offset={offset} batch={len(subset)} '
         f'total_shelf_books={len(ids)} update={len(plan["changes"])} '
         f'time={plan["time_updates"]} progress={plan["progress_updates"]} '
-        f'status={plan["status_updates"]} preserved={plan["preserved"]} '
+        f'status={plan["status_updates"]} '
+        f'to_reading={plan["status_to_reading"]} '
+        f'to_finished={plan["status_to_finished"]} '
+        f'preserved={plan["preserved"]} '
         f'missing_notion={plan["missing"]}'
     )
     if mode == "preview":
