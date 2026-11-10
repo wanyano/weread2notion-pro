@@ -73,6 +73,15 @@ class SafePlanningTests(unittest.TestCase):
         self.assertEqual(plan["status"], "已读")
         self.assertEqual(plan["reading_progress"], 1.0)
 
+    def test_legacy_marked_status_four_is_finished(self):
+        plan = book_state_update(
+            {"progress": 72, "finishTime": 0, "finishReading": 0,
+             "markedStatus": 4, "recordReadingTime": 900},
+            {"status": "想读", "readingProgress": 0.72, "readingTime": 900},
+        )
+        self.assertEqual(plan["status"], "已读")
+        self.assertEqual(plan["reading_progress"], 1.0)
+
     def test_book_state_never_moves_backwards(self):
         plan = book_state_update(
             {"progress": 30, "finishTime": 0, "recordReadingTime": 300},
