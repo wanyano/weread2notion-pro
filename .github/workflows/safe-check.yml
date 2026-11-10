@@ -7,6 +7,7 @@ on:
       - 'weread2notionpro/**'
       - 'requirements.txt'
       - 'setup.py'
+      - 'tests/**'
       - '.github/workflows/**'
 
 jobs:
@@ -21,15 +22,29 @@ jobs:
           python-version: '3.11'
       - name: Compile all Python modules (no account credentials required)
         run: python -m compileall -q weread2notionpro
-      - name: Run bookshelf planning unit tests (no credentials)
+      - name: Run safety planning unit tests (no credentials)
         run: python -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Verify main workflows are manual-only in review branch
+      - name: Verify weekly workflow guardrails
         run: |
           python - <<'PY'
           from pathlib import Path
-          for name in ("weread.yml", "read_time.yml"):
-              text = (Path(".github/workflows") / name).read_text()
-              assert "workflow_dispatch" in text, name
-              assert "schedule:" not in text, name
-          print("Manual-only guard confirmed")
+
+          workflows = Path(".github/workflows")
+          weekly = (workflows / "weekly_safe_sync.yml").read_text()
+          assert "schedule:" in weekly
+          assert "17 21 * * 0" in weekly
+          assert "refs/heads/main" in weekly
+          assert "refs/heads/fix/pro-2026-safe-sync" in weekly
+          assert "BOOK_PROGRESS_LIMIT: '0'" in weekly
+          assert "cancel-in-progress: false" in weekly
+          for name in (
+              "weread.yml",
+              "read_time.yml",
+              "book_progress.yml",
+              "read_heatmap.yml",
+          ):
+              text = (workflows / name).read_text()
+              assert "group: weread-notion-sync" in text, name
+              assert "cancel-in-progress: false" in text, name
+          print("Weekly branch, full-shelf and concurrency guards confirmed")
           PY
