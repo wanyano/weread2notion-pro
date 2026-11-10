@@ -108,6 +108,7 @@ class SafePlanningTests(unittest.TestCase):
         )
         self.assertIsNone(plan["status"])
         self.assertIsNone(plan["reading_progress"])
+        self.assertIsNone(plan["event_time"])
 
     def test_finish_time_updates_bookshelf_event_date(self):
         plan = book_state_update(
