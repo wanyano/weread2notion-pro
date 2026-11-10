@@ -118,13 +118,14 @@ existing Notion blocks or database rows. All workflows that can write to Notion
 share the `weread-notion-sync` concurrency group and queue rather than cancel
 an in-progress write.
 
-GitHub only runs scheduled workflows from the repository's default branch.
-Therefore the weekly schedule is intentionally **not active while this remains
-only a draft repair branch**. Manual dispatch is allowed on
-`fix/pro-2026-safe-sync` for controlled validation. The current `main`
-branch still contains the two legacy three-hour schedules; those are replaced
-only after this PR is reviewed and merged, or they must be disabled manually in
-GitHub Actions. This draft does not modify `main` directly.
+GitHub only lists and dispatches workflows whose workflow file exists on the
+repository's default branch, and scheduled workflows also run only from that
+branch. Therefore this workflow is intentionally **not visible or active while
+it remains only on the draft repair branch**. After the workflow file reaches
+`main`, manual dispatch can select either `main` or the repair branch and the
+weekly schedule can run on `main`. The current `main` branch still contains
+the two legacy three-hour schedules; those have been disabled manually. This
+draft does not modify `main` directly.
 
 
 ## Existing book status and progress
