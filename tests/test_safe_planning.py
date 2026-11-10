@@ -109,6 +109,33 @@ class SafePlanningTests(unittest.TestCase):
         self.assertIsNone(plan["status"])
         self.assertIsNone(plan["reading_progress"])
 
+    def test_finish_time_updates_bookshelf_event_date(self):
+        plan = book_state_update(
+            {"progress": 100, "finishTime": 1793943242,
+             "updateTime": 1793900000, "recordReadingTime": 900},
+            {"status": "在读", "readingProgress": 0.9,
+             "readingTime": 900, "eventTime": 1760000000},
+        )
+        self.assertEqual(plan["event_time"], 1793943242)
+
+    def test_active_progress_uses_latest_update_time(self):
+        plan = book_state_update(
+            {"progress": 74, "finishTime": 0,
+             "updateTime": 1793943242, "recordReadingTime": 900},
+            {"status": "在读", "readingProgress": 0.74,
+             "readingTime": 900, "eventTime": None},
+        )
+        self.assertEqual(plan["event_time"], 1793943242)
+
+    def test_event_date_never_moves_backwards(self):
+        plan = book_state_update(
+            {"progress": 74, "finishTime": 0,
+             "updateTime": 1760000000, "recordReadingTime": 900},
+            {"status": "在读", "readingProgress": 0.74,
+             "readingTime": 900, "eventTime": 1793943242},
+        )
+        self.assertIsNone(plan["event_time"])
+
     def test_zero_limit_selects_every_remaining_book(self):
         books = [str(index) for index in range(233)]
         self.assertEqual(len(select_book_batch(books, 0, 0)), 233)
