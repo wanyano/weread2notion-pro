@@ -1,10 +1,10 @@
-name: book reading progress sync
+name: book state and progress sync
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Preview before writing to Notion 书架'
+        description: 'Preview before updating Notion 书架 time, progress and status'
         type: choice
         options:
           - preview
@@ -44,5 +44,5 @@ jobs:
       - run: |
           pip install -r requirements.txt
           pip install -e .
-      - name: Book cumulative reading time preview or import
+      - name: Book time, progress and status preview or import
         run: python -m weread2notionpro.book_progress_sync
