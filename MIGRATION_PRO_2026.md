@@ -104,14 +104,19 @@ The repair branch contains `.github/workflows/weekly_safe_sync.yml`. It is
 scheduled for Monday 05:17 Asia/Shanghai (Sunday 21:17 UTC) and performs these
 steps serially:
 
-1. increment the current year's daily reading-time records;
-2. render and commit the current-year heatmap, then update the existing embed;
-3. increment cumulative reading time for every ebook already in the Notion shelf.
+1. create only shelf books that are missing from Notion;
+2. increase progress, cumulative reading time, and status for every shelf book;
+3. append newly discovered highlights and notes using WeRead's stable IDs;
+4. increment the current year's daily reading-time records;
+5. render and commit the current-year heatmap, then update the existing embed.
 
-Daily and per-book durations are monotonic: missing/zero/lower source values
-never clear or reduce existing Notion history. All workflows that can write to
-Notion share the `weread-notion-sync` concurrency group and queue rather than
-cancel an in-progress write.
+The bookshelf import never rewrites existing book pages. Status is monotonic
+(`想读 -> 在读 -> 已读`), progress and durations only increase, and missing or
+lower source values never clear Notion history. Highlights and notes are
+deduplicated by `bookmarkId` and `reviewId`; source deletions do not delete
+existing Notion blocks or database rows. All workflows that can write to Notion
+share the `weread-notion-sync` concurrency group and queue rather than cancel
+an in-progress write.
 
 GitHub only runs scheduled workflows from the repository's default branch.
 Therefore the weekly schedule is intentionally **not active while this remains
