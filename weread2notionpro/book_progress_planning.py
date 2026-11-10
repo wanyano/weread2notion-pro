@@ -4,6 +4,11 @@
 STATUS_RANK = {"想读": 0, "在读": 1, "已读": 2}
 
 
+def title_matches(query, title):
+    """Case-insensitive exact title matching for opt-in diagnostics."""
+    return bool(query and title and query.strip().casefold() == title.strip().casefold())
+
+
 def select_book_batch(book_ids, offset, limit):
     """Select a manual batch, or every remaining book when limit is zero."""
     if offset < 0 or limit < 0 or limit > 100:
