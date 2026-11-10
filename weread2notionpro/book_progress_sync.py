@@ -27,6 +27,8 @@ def prepare_changes(
         shelf_book = shelf_books.get(book_id) or {}
         if shelf_book.get("finishReading") in (1, True):
             book["finishReading"] = 1
+        if shelf_book.get("markedStatus") == 4:
+            book["markedStatus"] = 4
         if index % 20 == 0:
             print(f"BOOK_PROGRESS_READ: {index}/{len(ordered_ids)}")
         if index < len(ordered_ids) and request_interval:
@@ -76,7 +78,23 @@ def main():
         for item in shelf.get("books", [])
         if item.get("bookId")
     }
+    for item in shelf.get("bookProgress") or []:
+        book_id = item.get("bookId")
+        if not book_id:
+            continue
+        book_id = str(book_id)
+        if book_id in shelf_books:
+            if item.get("finishReading") in (1, True):
+                shelf_books[book_id]["finishReading"] = 1
+            if item.get("markedStatus") == 4:
+                shelf_books[book_id]["markedStatus"] = 4
     ids = list(shelf_books)
+    print(
+        "BOOK_PROGRESS_SOURCE: "
+        f'shelf_finishReading={sum(item.get("finishReading") in (1, True) for item in shelf_books.values())} '
+        f'shelf_marked_finished={sum(item.get("markedStatus") == 4 for item in shelf_books.values())} '
+        f'bookProgress_rows={len(shelf.get("bookProgress") or [])}'
+    )
     offset = int(os.environ.get("BOOK_PROGRESS_OFFSET") or 0)
     limit = int(os.environ.get("BOOK_PROGRESS_LIMIT") or 40)
     subset = select_book_batch(ids, offset, limit)
