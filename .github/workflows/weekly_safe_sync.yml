@@ -78,6 +78,6 @@ jobs:
           echo "HEATMAP_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - name: Point the existing Notion embed at the committed heatmap
         run: python -m weread2notionpro.heatmap_sync --year "$HEATMAP_YEAR" --update-embed
-      - name: Increment cumulative time for every existing shelf book
+      - name: Increment time, progress and status for every existing shelf book
         run: python -m weread2notionpro.book_progress_sync
 
