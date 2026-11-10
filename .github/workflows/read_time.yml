@@ -21,12 +21,12 @@ on:
         default: ''
         required: false
       offset:
-        description: 'For book preview/import: first book index, default 0'
+        description: 'For book state preview/import: first book index, default 0'
         type: string
         default: '0'
         required: false
       limit:
-        description: 'For book preview/import: batch size 1-100'
+        description: 'For book state preview/import: batch size 1-100'
         type: string
         default: '40'
         required: false
@@ -66,7 +66,7 @@ jobs:
       - name: Daily reading time preview or import
         if: inputs.mode == 'preview' || inputs.mode == 'import'
         run: read_time
-      - name: Per-book cumulative time preview or import
+      - name: Per-book time, progress and status preview or import
         if: inputs.mode == 'book_preview' || inputs.mode == 'book_import'
         run: python -m weread2notionpro.book_progress_sync
       - name: Resolve heatmap year
