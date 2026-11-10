@@ -505,6 +505,9 @@ class NotionHelper:
                 "readingTime": get_property_value(
                     result.get("properties").get("阅读时长")
                 ),
+                "readingProgress": get_property_value(
+                    result.get("properties").get("阅读进度")
+                ),
                 "category": get_property_value(
                     result.get("properties").get("书架分类")
                 ),
