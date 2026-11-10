@@ -1,5 +1,6 @@
 """Safely reconcile cumulative reading time for books already in Notion."""
 import os
+import time
 
 from weread2notionpro.book_progress_planning import (
     book_state_update,
@@ -9,7 +10,7 @@ from weread2notionpro.notion_helper import NotionHelper
 from weread2notionpro.weread_api import WeReadApi
 
 
-def prepare_changes(api, notion_books, ordered_ids):
+def prepare_changes(api, notion_books, ordered_ids, request_interval=1.1):
     changes, preserved, missing = [], 0, 0
     time_updates = progress_updates = status_updates = 0
     for index, book_id in enumerate(ordered_ids, 1):
@@ -17,8 +18,12 @@ def prepare_changes(api, notion_books, ordered_ids):
         if not record:
             missing += 1
             continue
-        data = api.gateway("/book/getprogress", bookId=book_id)
+        data = api.get_book_progress(book_id)
         book = data.get("book") or {}
+        if index % 20 == 0:
+            print(f"BOOK_PROGRESS_READ: {index}/{len(ordered_ids)}")
+        if index < len(ordered_ids) and request_interval:
+            time.sleep(request_interval)
         planned = book_state_update(book, record)
         if not any(
             planned[key] is not None
@@ -34,8 +39,6 @@ def prepare_changes(api, notion_books, ordered_ids):
             "book_id": book_id,
             **planned,
         })
-        if index % 20 == 0:
-            print(f"BOOK_PROGRESS_READ: {index}/{len(ordered_ids)}")
     return {
         "changes": changes,
         "preserved": preserved,
@@ -65,7 +68,10 @@ def main():
     offset = int(os.environ.get("BOOK_PROGRESS_OFFSET") or 0)
     limit = int(os.environ.get("BOOK_PROGRESS_LIMIT") or 40)
     subset = select_book_batch(ids, offset, limit)
-    plan = prepare_changes(api, notion_books, subset)
+    request_interval = float(os.environ.get("BOOK_PROGRESS_INTERVAL") or 1.1)
+    if request_interval < 1 or request_interval > 5:
+        raise ValueError("BOOK_PROGRESS_INTERVAL must be between 1 and 5 seconds")
+    plan = prepare_changes(api, notion_books, subset, request_interval)
     print(
         f'BOOK_PROGRESS_AUDIT: mode={mode} offset={offset} batch={len(subset)} '
         f'total_shelf_books={len(ids)} update={len(plan["changes"])} '
