@@ -1,6 +1,7 @@
 import unittest
 
 from weread2notionpro.book_progress_planning import (
+    book_state_update,
     cumulative_update,
     select_book_batch,
 )
@@ -53,6 +54,32 @@ class SafePlanningTests(unittest.TestCase):
         self.assertIsNone(cumulative_update(100, 200))
         self.assertIsNone(cumulative_update(200, 200))
         self.assertEqual(cumulative_update(300, 200), 300)
+
+    def test_finished_book_promotes_status_and_progress(self):
+        plan = book_state_update(
+            {"progress": 72, "finishTime": 1730000000, "recordReadingTime": 900},
+            {"status": "想读", "readingProgress": 0.1, "readingTime": 600},
+        )
+        self.assertEqual(plan["status"], "已读")
+        self.assertEqual(plan["reading_progress"], 1.0)
+        self.assertEqual(plan["reading_time"], 900)
+
+    def test_book_state_never_moves_backwards(self):
+        plan = book_state_update(
+            {"progress": 30, "finishTime": 0, "recordReadingTime": 300},
+            {"status": "已读", "readingProgress": 1.0, "readingTime": 1000},
+        )
+        self.assertIsNone(plan["status"])
+        self.assertIsNone(plan["reading_progress"])
+        self.assertIsNone(plan["reading_time"])
+
+    def test_progress_without_finish_promotes_to_reading(self):
+        plan = book_state_update(
+            {"progress": 1, "finishTime": 0, "recordReadingTime": 60},
+            {"status": "想读", "readingProgress": 0, "readingTime": 0},
+        )
+        self.assertEqual(plan["status"], "在读")
+        self.assertEqual(plan["reading_progress"], 0.01)
 
     def test_zero_limit_selects_every_remaining_book(self):
         books = [str(index) for index in range(233)]
