@@ -117,17 +117,22 @@ def main():
     offset = int(os.environ.get("BOOK_PROGRESS_OFFSET") or 0)
     limit = int(os.environ.get("BOOK_PROGRESS_LIMIT") or 40)
     subset = select_book_batch(ids, offset, limit)
+    debug_title = os.environ.get("BOOK_PROGRESS_DEBUG_TITLE") or ""
+    if debug_title:
+        subset = [
+            book_id for book_id in subset
+            if title_matches(debug_title, shelf_books[book_id].get("title"))
+        ]
+        if len(subset) != 1:
+            raise ValueError(
+                f"Expected exactly one exact debug-title match; got {len(subset)}"
+            )
     request_interval = float(os.environ.get("BOOK_PROGRESS_INTERVAL") or 1.1)
     if request_interval < 1 or request_interval > 5:
         raise ValueError("BOOK_PROGRESS_INTERVAL must be between 1 and 5 seconds")
-    debug_title = os.environ.get("BOOK_PROGRESS_DEBUG_TITLE") or ""
     plan = prepare_changes(
         api, notion_books, subset, shelf_books, request_interval, debug_title
     )
-    if debug_title and plan["debug_matches"] != 1:
-        raise ValueError(
-            f"Expected exactly one exact debug-title match; got {plan['debug_matches']}"
-        )
     print(
         f'BOOK_PROGRESS_AUDIT: mode={mode} offset={offset} batch={len(subset)} '
         f'total_shelf_books={len(ids)} update={len(plan["changes"])} '
