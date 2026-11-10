@@ -115,7 +115,7 @@ def main():
         f'READ_TIME_AUDIT: year={year} source_days={len(source_days)} '
         f'existing_rows={len(existing)} '
         f'create={len(plan["create"])} update={len(plan["update"])} '
-        f'unchanged={plan["unchanged"]}'
+        f'unchanged={plan["unchanged"]} preserved={plan["preserved"]}'
     )
     # Do not print daily reading time details: they are personal activity data.
     if mode == "preview":
