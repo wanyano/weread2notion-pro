@@ -30,6 +30,11 @@ on:
         type: string
         default: '40'
         required: false
+      book_title:
+        description: 'Optional exact book title for private preview diagnostics'
+        type: string
+        default: ''
+        required: false
 
 concurrency:
   group: weread-notion-sync
@@ -51,6 +56,7 @@ jobs:
       BOOK_PROGRESS_MODE: ${{ inputs.mode == 'book_import' && 'import' || 'preview' }}
       BOOK_PROGRESS_OFFSET: ${{ inputs.offset }}
       BOOK_PROGRESS_LIMIT: ${{ inputs.limit }}
+      BOOK_PROGRESS_DEBUG_TITLE: ${{ inputs.book_title }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
