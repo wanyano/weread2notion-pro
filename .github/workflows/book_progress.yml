@@ -16,13 +16,13 @@ on:
         type: string
         default: '0'
       limit:
-        description: 'Books per run (1-100)'
+        description: 'Books per run (1-100; 0 means all)'
         type: string
         default: '40'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: weread-notion-sync
+  cancel-in-progress: false
 
 jobs:
   sync:
