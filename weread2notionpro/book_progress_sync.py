@@ -5,18 +5,20 @@ import time
 from weread2notionpro.book_progress_planning import (
     book_state_update,
     select_book_batch,
+    title_matches,
 )
 from weread2notionpro.notion_helper import NotionHelper
 from weread2notionpro.weread_api import WeReadApi
 
 
 def prepare_changes(
-    api, notion_books, ordered_ids, shelf_books=None, request_interval=1.1
+    api, notion_books, ordered_ids, shelf_books=None, request_interval=1.1,
+    debug_title=""
 ):
     shelf_books = shelf_books or {}
     changes, preserved, missing = [], 0, 0
     time_updates = progress_updates = status_updates = 0
-    status_to_reading = status_to_finished = 0
+    status_to_reading = status_to_finished = debug_matches = 0
     for index, book_id in enumerate(ordered_ids, 1):
         record = notion_books.get(book_id)
         if not record:
@@ -34,6 +36,22 @@ def prepare_changes(
         if index < len(ordered_ids) and request_interval:
             time.sleep(request_interval)
         planned = book_state_update(book, record)
+        if title_matches(debug_title, shelf_book.get("title")):
+            debug_matches += 1
+            print(
+                "BOOK_PROGRESS_DEBUG: "
+                f'title={shelf_book.get("title")} '
+                f'bookId={book_id} '
+                f'finishReading={shelf_book.get("finishReading")} '
+                f'markedStatus={shelf_book.get("markedStatus")} '
+                f'isStartReading={book.get("isStartReading")} '
+                f'source_progress={book.get("progress")} '
+                f'source_has_time={bool(book.get("recordReadingTime"))} '
+                f'current_status={record.get("status")} '
+                f'current_progress={record.get("readingProgress")} '
+                f'planned_status={planned.get("status")} '
+                f'planned_progress={planned.get("reading_progress")}'
+            )
         if not any(
             planned[key] is not None
             for key in ("reading_time", "reading_progress", "status")
@@ -59,6 +77,7 @@ def prepare_changes(
         "status_updates": status_updates,
         "status_to_reading": status_to_reading,
         "status_to_finished": status_to_finished,
+        "debug_matches": debug_matches,
     }
 
 
@@ -101,9 +120,14 @@ def main():
     request_interval = float(os.environ.get("BOOK_PROGRESS_INTERVAL") or 1.1)
     if request_interval < 1 or request_interval > 5:
         raise ValueError("BOOK_PROGRESS_INTERVAL must be between 1 and 5 seconds")
+    debug_title = os.environ.get("BOOK_PROGRESS_DEBUG_TITLE") or ""
     plan = prepare_changes(
-        api, notion_books, subset, shelf_books, request_interval
+        api, notion_books, subset, shelf_books, request_interval, debug_title
     )
+    if debug_title and plan["debug_matches"] != 1:
+        raise ValueError(
+            f"Expected exactly one exact debug-title match; got {plan['debug_matches']}"
+        )
     print(
         f'BOOK_PROGRESS_AUDIT: mode={mode} offset={offset} batch={len(subset)} '
         f'total_shelf_books={len(ids)} update={len(plan["changes"])} '
@@ -111,6 +135,7 @@ def main():
         f'status={plan["status_updates"]} '
         f'to_reading={plan["status_to_reading"]} '
         f'to_finished={plan["status_to_finished"]} '
+        f'debug_matches={plan["debug_matches"]} '
         f'preserved={plan["preserved"]} '
         f'missing_notion={plan["missing"]}'
     )
