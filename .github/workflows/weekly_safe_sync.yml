@@ -18,13 +18,15 @@ jobs:
        (github.ref == 'refs/heads/main' ||
         github.ref == 'refs/heads/fix/pro-2026-safe-sync'))
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     permissions:
       contents: write
     env:
       NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
       NOTION_PAGE: ${{ secrets.NOTION_PAGE }}
       WEREAD_API_KEY: ${{ secrets.WEREAD_API_KEY }}
+      # Create only missing shelf entries. Existing Notion book pages are not rewritten here.
+      BOOKSHELF_IMPORT: 'true'
       READ_TIME_MODE: import
       BOOK_PROGRESS_MODE: import
       BOOK_PROGRESS_OFFSET: '0'
@@ -56,6 +58,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -e .
+      - name: Add only missing WeRead shelf books
+        run: python -m weread2notionpro.book
+      - name: Increase time, progress and status for every shelf book
+        run: python -m weread2notionpro.book_progress_sync
+      - name: Append new highlights and notes without deleting Notion history
+        run: python -m weread2notionpro.weread
       - name: Increment current-year daily reading time
         run: python -m weread2notionpro.read_time
       - name: Resolve current heatmap year
@@ -78,6 +86,3 @@ jobs:
           echo "HEATMAP_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - name: Point the existing Notion embed at the committed heatmap
         run: python -m weread2notionpro.heatmap_sync --year "$HEATMAP_YEAR" --update-embed
-      - name: Increment time, progress and status for every existing shelf book
-        run: python -m weread2notionpro.book_progress_sync
-
