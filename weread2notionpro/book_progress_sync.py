@@ -74,6 +74,7 @@ def prepare_changes(
         changes.append({
             "page_id": record["pageId"],
             "book_id": book_id,
+            "previous_event_time": record.get("eventTime"),
             **planned,
         })
     return {
@@ -142,6 +143,29 @@ def main():
     plan = prepare_changes(
         api, notion_books, subset, shelf_books, request_interval, debug_title
     )
+    date_transitions = {}
+    for item in plan["changes"]:
+        if item["event_time"] is None:
+            continue
+        previous = item.get("previous_event_time")
+        previous_year = (
+            str(pendulum.from_timestamp(previous, tz="Asia/Shanghai").year)
+            if previous
+            else "missing"
+        )
+        source_year = str(
+            pendulum.from_timestamp(item["event_time"], tz="Asia/Shanghai").year
+        )
+        key = f"{previous_year}->{source_year}"
+        date_transitions[key] = date_transitions.get(key, 0) + 1
+    transition_summary = ",".join(
+        f"{key}:{date_transitions[key]}" for key in sorted(date_transitions)
+    ) or "none"
+    print(
+        f'BOOK_DATE_AUDIT: planned={plan["date_updates"]} '
+        f'transitions={transition_summary}'
+    )
+
     print(
         f'BOOK_PROGRESS_AUDIT: mode={mode} offset={offset} batch={len(subset)} '
         f'total_shelf_books={len(ids)} update={len(plan["changes"])} '
