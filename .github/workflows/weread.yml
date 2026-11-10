@@ -2,18 +2,28 @@ name: weread note sync
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 */3 * * *"
+    inputs:
+      mode:
+        description: 'Preview missing books first; import only after review'
+        type: choice
+        options:
+          - preview
+          - import
+          - notes
+        default: preview
+        required: true
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: weread-notion-sync
+  cancel-in-progress: false
 jobs:
   sync:
     name: Sync
     runs-on: ubuntu-latest
     env:
+      BOOKSHELF_IMPORT: ${{ inputs.mode == 'import' }}
       NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
       NOTION_PAGE: ${{ secrets.NOTION_PAGE }}
+      WEREAD_API_KEY: ${{ secrets.WEREAD_API_KEY }}
       WEREAD_COOKIE: ${{ secrets.WEREAD_COOKIE }}
       CC_URL: ${{ secrets.CC_URL }}
       CC_ID: ${{ secrets.CC_ID }}
@@ -41,10 +51,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: weread book sync
+          pip install -e .
+      - name: Bookshelf preview or import
+        if: inputs.mode != 'notes'
         run: |
           book
-      - name: weread sync
+      - name: Note sync
+        if: inputs.mode == 'notes' || inputs.mode == 'import'
         run: |
           weread
       

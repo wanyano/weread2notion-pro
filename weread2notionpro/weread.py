@@ -241,7 +241,7 @@ def main():
     if books != None:
         for index, book in enumerate(books):
             bookId = book.get("bookId")
-            title = book.get("book").get("title")
+            title = (book.get("book") or book).get("title") or bookId
             sort = book.get("sort")
             if bookId not in notion_books:
                 continue

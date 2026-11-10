@@ -1,0 +1,63 @@
+name: Pro compatibility checks
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'weread2notionpro/**'
+      - 'requirements.txt'
+      - 'setup.py'
+      - 'MIGRATION_PRO_2026.md'
+      - 'tests/**'
+      - '.github/workflows/**'
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile all Python modules (no account credentials required)
+        run: python -m compileall -q weread2notionpro
+      - name: Run safety planning unit tests (no credentials)
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Verify weekly workflow guardrails
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          workflows = Path(".github/workflows")
+          weekly = (workflows / "weekly_safe_sync.yml").read_text()
+          assert "schedule:" in weekly
+          assert "17 21 * * 0" in weekly
+          assert "refs/heads/main" in weekly
+          assert "refs/heads/fix/pro-2026-safe-sync" in weekly
+          assert "BOOKSHELF_IMPORT: 'true'" in weekly
+          assert "BOOK_PROGRESS_LIMIT: '0'" in weekly
+          assert "cancel-in-progress: false" in weekly
+
+          required_steps = [
+              "python -m weread2notionpro.book",
+              "python -m weread2notionpro.book_progress_sync",
+              "python -m weread2notionpro.weread",
+              "python -m weread2notionpro.read_time",
+              "python -m weread2notionpro.heatmap_sync --year",
+          ]
+          positions = [weekly.index(step) for step in required_steps]
+          assert positions == sorted(positions), "weekly sync steps are missing or out of safe order"
+
+          for name in (
+              "weread.yml",
+              "read_time.yml",
+              "book_progress.yml",
+              "read_heatmap.yml",
+          ):
+              text = (workflows / name).read_text()
+              assert "group: weread-notion-sync" in text, name
+              assert "cancel-in-progress: false" in text, name
+          print("Weekly branch, full-shelf, notes, time, heatmap and concurrency guards confirmed")
+          PY

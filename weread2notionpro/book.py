@@ -1,7 +1,9 @@
+import os
 import pendulum
 from weread2notionpro.notion_helper import NotionHelper
 from weread2notionpro.weread_api import WeReadApi
 from weread2notionpro import utils
+from weread2notionpro.sync_planning import plan_bookshelf
 from weread2notionpro.config import book_properties_type_dict, tz
 
 TAG_ICON_URL = "https://www.notion.so/icons/tag_gray.svg"
@@ -50,12 +52,12 @@ def insert_book_to_notion(books, index, bookId):
     )
     book["开始阅读时间"] = book.get("beginReadingDate")
     book["最后阅读时间"] = book.get("lastReadingDate")
-    cover = book.get("cover").replace("/s_", "/t7_")
+    cover = (book.get("cover") or "").replace("/s_", "/t7_")
     if not cover or not cover.strip() or not cover.startswith("http"):
         cover = BOOK_ICON_URL
     if bookId not in notion_books:
         book["书名"] = book.get("title")
-        book["BookId"] = book.get("bookId")
+        book["BookId"] = bookId
         book["ISBN"] = book.get("isbn")
         book["链接"] = weread_api.get_url(bookId)
         book["简介"] = book.get("intro")
@@ -63,7 +65,7 @@ def insert_book_to_notion(books, index, bookId):
             notion_helper.get_relation_id(
                 x, notion_helper.author_database_id, USER_ICON_URL
             )
-            for x in book.get("author").split(" ")
+            for x in (book.get("author") or "").split(" ") if x
         ]
         if book.get("categories"):
             book["分类"] = [
@@ -82,7 +84,7 @@ def insert_book_to_notion(books, index, bookId):
     print(
         f"正在插入《{book.get('title')}》,一共{len(books)}本，当前是第{index+1}本。"
     )
-    parent = {"database_id": notion_helper.book_database_id, "type": "database_id"}
+    parent = notion_helper._parent(notion_helper.book_database_id)
     result = None
     if bookId in notion_books:
         result = notion_helper.update_page(
@@ -125,7 +127,7 @@ def insert_read_data(page_id, readTimes):
 
 
 def insert_to_notion(page_id, timestamp, duration, book_database_id):
-    parent = {"database_id": notion_helper.read_database_id, "type": "database_id"}
+    parent = notion_helper._parent(notion_helper.read_database_id)
     properties = {
         "标题": utils.get_title(
             pendulum.from_timestamp(timestamp, tz=tz).to_date_string()
@@ -158,8 +160,34 @@ notion_books = {}
 def main():
     global notion_books
     global archive_dict
-    bookshelf_books = weread_api.get_bookshelf()
     notion_books = notion_helper.get_all_book()
+    if weread_api.api_key:
+        shelf = weread_api.get_bookshelf()
+        notebooks = weread_api.get_notebooklist()
+        plan = plan_bookshelf(shelf, notebooks, notion_books.keys())
+        missing = plan["missing_book_ids"]
+        print(
+            "FULL_SHELF_AUDIT: "
+            f'ebooks={plan["shelf_ebook_count"]}, '
+            f'albums={plan["shelf_album_count"]}, '
+            f'notebook_books={plan["notebook_count"]}, '
+            f'combined_unique={len(plan["book_ids"])}, '
+            f'existing_notion={len(notion_books)}, '
+            f'missing={len(missing)}'
+        )
+        # Only IDs and names. Do not print raw API payloads or credentials.
+        for idx, book_id in enumerate(missing, 1):
+            name = (plan["metadata"].get(book_id) or {}).get("title") or "未知书名"
+            print(f'MISSING_BOOK {idx}/{len(missing)}: {name} (bookId={book_id})')
+        if os.getenv("BOOKSHELF_IMPORT", "false").lower() != "true":
+            print("PREVIEW_ONLY: no missing books created. Re-run with BOOKSHELF_IMPORT=true after reviewing audit.")
+            return
+        # Safe import: create only missing entries, never rewrite existing book pages.
+        print(f"IMPORT_MISSING_BOOKS: creating {len(missing)} entries")
+        for index, book_id in enumerate(missing):
+            insert_book_to_notion(missing, index, book_id)
+        return
+    bookshelf_books = weread_api.get_bookshelf()
     bookProgress = bookshelf_books.get("bookProgress")
     bookProgress = {book.get("bookId"): book for book in bookProgress}
     for archive in bookshelf_books.get("archive"):
