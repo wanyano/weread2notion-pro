@@ -10,7 +10,10 @@ from weread2notionpro.notion_helper import NotionHelper
 from weread2notionpro.weread_api import WeReadApi
 
 
-def prepare_changes(api, notion_books, ordered_ids, request_interval=1.1):
+def prepare_changes(
+    api, notion_books, ordered_ids, shelf_books=None, request_interval=1.1
+):
+    shelf_books = shelf_books or {}
     changes, preserved, missing = [], 0, 0
     time_updates = progress_updates = status_updates = 0
     status_to_reading = status_to_finished = 0
@@ -20,7 +23,10 @@ def prepare_changes(api, notion_books, ordered_ids, request_interval=1.1):
             missing += 1
             continue
         data = api.get_book_progress(book_id)
-        book = data.get("book") or {}
+        book = dict(data.get("book") or {})
+        shelf_book = shelf_books.get(book_id) or {}
+        if shelf_book.get("finishReading") in (1, True):
+            book["finishReading"] = 1
         if index % 20 == 0:
             print(f"BOOK_PROGRESS_READ: {index}/{len(ordered_ids)}")
         if index < len(ordered_ids) and request_interval:
@@ -65,18 +71,21 @@ def main():
     helper = NotionHelper()
     notion_books = helper.get_all_book()
     shelf = api.get_bookshelf()
-    ids = list(dict.fromkeys(
-        str(item["bookId"])
+    shelf_books = {
+        str(item["bookId"]): item
         for item in shelf.get("books", [])
         if item.get("bookId")
-    ))
+    }
+    ids = list(shelf_books)
     offset = int(os.environ.get("BOOK_PROGRESS_OFFSET") or 0)
     limit = int(os.environ.get("BOOK_PROGRESS_LIMIT") or 40)
     subset = select_book_batch(ids, offset, limit)
     request_interval = float(os.environ.get("BOOK_PROGRESS_INTERVAL") or 1.1)
     if request_interval < 1 or request_interval > 5:
         raise ValueError("BOOK_PROGRESS_INTERVAL must be between 1 and 5 seconds")
-    plan = prepare_changes(api, notion_books, subset, request_interval)
+    plan = prepare_changes(
+        api, notion_books, subset, shelf_books, request_interval
+    )
     print(
         f'BOOK_PROGRESS_AUDIT: mode={mode} offset={offset} batch={len(subset)} '
         f'total_shelf_books={len(ids)} update={len(plan["changes"])} '
