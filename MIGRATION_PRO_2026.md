@@ -96,3 +96,27 @@ confirm the audit before `book_import`; repeat batches with offsets 40, 80,
 
 If the old `main` branch still has a scheduled workflow, disable or
 supersede it before enabling any new schedule to avoid conflicting writes.
+
+
+## Weekly safe synchronization
+
+The repair branch contains `.github/workflows/weekly_safe_sync.yml`. It is
+scheduled for Monday 05:17 Asia/Shanghai (Sunday 21:17 UTC) and performs these
+steps serially:
+
+1. increment the current year's daily reading-time records;
+2. render and commit the current-year heatmap, then update the existing embed;
+3. increment cumulative reading time for every ebook already in the Notion shelf.
+
+Daily and per-book durations are monotonic: missing/zero/lower source values
+never clear or reduce existing Notion history. All workflows that can write to
+Notion share the `weread-notion-sync` concurrency group and queue rather than
+cancel an in-progress write.
+
+GitHub only runs scheduled workflows from the repository's default branch.
+Therefore the weekly schedule is intentionally **not active while this remains
+only a draft repair branch**. Manual dispatch is allowed on
+`fix/pro-2026-safe-sync` for controlled validation. The current `main`
+branch still contains the two legacy three-hour schedules; those are replaced
+only after this PR is reviewed and merged, or they must be disabled manually in
+GitHub Actions. This draft does not modify `main` directly.
