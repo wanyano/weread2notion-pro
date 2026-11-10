@@ -62,12 +62,16 @@ def book_state_update(source, existing):
     ):
         raise ValueError("Invalid finish time from WeRead")
 
+    finish_reading = source.get("finishReading")
+    if finish_reading not in (None, 0, 1, False, True):
+        raise ValueError("Invalid shelf completion marker from WeRead")
+
     seconds = source.get("recordReadingTime")
     seconds_change = None
     if seconds is not None:
         seconds_change = cumulative_update(seconds, existing.get("readingTime"))
 
-    finished = bool(finish_time) or progress >= 100
+    finished = finish_reading in (1, True) or bool(finish_time) or progress >= 100
     source_status = (
         "已读"
         if finished
