@@ -67,6 +67,15 @@ def book_state_update(source, existing):
     ):
         raise ValueError("Invalid finish time from WeRead")
 
+    update_time = source.get("updateTime") or 0
+    if (
+        isinstance(update_time, bool)
+        or not isinstance(update_time, (int, float))
+        or update_time < 0
+        or int(update_time) != update_time
+    ):
+        raise ValueError("Invalid update time from WeRead")
+
     finish_reading = source.get("finishReading")
     if finish_reading not in (None, 0, 1, False, True):
         raise ValueError("Invalid shelf completion marker from WeRead")
@@ -126,10 +135,36 @@ def book_state_update(source, existing):
     ):
         status_change = source_status
 
+    current_event_time = existing.get("eventTime")
+    if current_event_time is not None and (
+        isinstance(current_event_time, bool)
+        or not isinstance(current_event_time, (int, float))
+        or current_event_time < 0
+        or int(current_event_time) != current_event_time
+    ):
+        raise ValueError("Invalid existing Notion reading event time")
+
+    # "时间" drives the 年/月/周/日 relations used by the bookshelf views.
+    # Prefer an authoritative finish timestamp. For an actively read book,
+    # updateTime is the latest progress event. Never move an existing date back.
+    source_event_time = (
+        finish_time
+        if finished and finish_time
+        else update_time
+        if source_status != "想读"
+        else 0
+    )
+    event_time_change = (
+        int(source_event_time)
+        if source_event_time > int(current_event_time or 0)
+        else None
+    )
+
     return {
         "reading_time": seconds_change,
         "reading_progress": progress_change,
         "status": status_change,
+        "event_time": event_time_change,
         "source_status": source_status,
     }
 

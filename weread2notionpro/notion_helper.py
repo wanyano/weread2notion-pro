@@ -521,6 +521,9 @@ class NotionHelper:
                 ),
                 "comment": get_property_value(result.get("properties").get("豆瓣短评")),
                 "status": get_property_value(result.get("properties").get("阅读状态")),
+                "eventTime": get_property_value(
+                    result.get("properties").get("时间")
+                ),
             }
         return books_dict
 

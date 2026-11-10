@@ -2,6 +2,9 @@
 import os
 import time
 
+import pendulum
+
+from weread2notionpro import utils
 from weread2notionpro.book_progress_planning import (
     book_state_update,
     select_book_batch,
@@ -17,7 +20,7 @@ def prepare_changes(
 ):
     shelf_books = shelf_books or {}
     changes, preserved, missing = [], 0, 0
-    time_updates = progress_updates = status_updates = 0
+    time_updates = progress_updates = status_updates = date_updates = 0
     status_to_reading = status_to_finished = debug_matches = 0
     for index, book_id in enumerate(ordered_ids, 1):
         record = notion_books.get(book_id)
@@ -50,17 +53,22 @@ def prepare_changes(
                 f'current_status={record.get("status")} '
                 f'current_progress={record.get("readingProgress")} '
                 f'planned_status={planned.get("status")} '
-                f'planned_progress={planned.get("reading_progress")}'
+                f'planned_progress={planned.get("reading_progress")} '
+                f'source_finish_time={book.get("finishTime")} '
+                f'source_update_time={book.get("updateTime")} '
+                f'current_event_time={record.get("eventTime")} '
+                f'planned_event_time={planned.get("event_time")}'
             )
         if not any(
             planned[key] is not None
-            for key in ("reading_time", "reading_progress", "status")
+            for key in ("reading_time", "reading_progress", "status", "event_time")
         ):
             preserved += 1
             continue
         time_updates += planned["reading_time"] is not None
         progress_updates += planned["reading_progress"] is not None
         status_updates += planned["status"] is not None
+        date_updates += planned["event_time"] is not None
         status_to_reading += planned["status"] == "在读"
         status_to_finished += planned["status"] == "已读"
         changes.append({
@@ -75,6 +83,7 @@ def prepare_changes(
         "time_updates": time_updates,
         "progress_updates": progress_updates,
         "status_updates": status_updates,
+        "date_updates": date_updates,
         "status_to_reading": status_to_reading,
         "status_to_finished": status_to_finished,
         "debug_matches": debug_matches,
@@ -137,7 +146,7 @@ def main():
         f'BOOK_PROGRESS_AUDIT: mode={mode} offset={offset} batch={len(subset)} '
         f'total_shelf_books={len(ids)} update={len(plan["changes"])} '
         f'time={plan["time_updates"]} progress={plan["progress_updates"]} '
-        f'status={plan["status_updates"]} '
+        f'status={plan["status_updates"]} date={plan["date_updates"]} '
         f'to_reading={plan["status_to_reading"]} '
         f'to_finished={plan["status_to_finished"]} '
         f'debug_matches={plan["debug_matches"]} '
@@ -155,6 +164,12 @@ def main():
             properties["阅读进度"] = {"number": item["reading_progress"]}
         if item["status"] is not None:
             properties["阅读状态"] = {"status": {"name": item["status"]}}
+        if item["event_time"] is not None:
+            event_date = pendulum.from_timestamp(
+                item["event_time"], tz="Asia/Shanghai"
+            )
+            properties["时间"] = utils.get_date(event_date.to_datetime_string())
+            helper.get_date_relation(properties, event_date)
         helper.update_book_page(
             page_id=item["page_id"],
             properties=properties,
@@ -162,7 +177,7 @@ def main():
     print(
         f'BOOK_PROGRESS_IMPORT_COMPLETED: pages={len(plan["changes"])} '
         f'time={plan["time_updates"]} progress={plan["progress_updates"]} '
-        f'status={plan["status_updates"]}'
+        f'status={plan["status_updates"]} date={plan["date_updates"]}'
     )
 
 
