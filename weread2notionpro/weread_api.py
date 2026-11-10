@@ -197,11 +197,21 @@ class WeReadApi:
             # progress=1 means 1%, not 100%.
             progress = max(0, min(float(book.get("progress") or 0), 100))
             finished = book.get("finishTime") or 0
-            marked_status = 4 if finished or progress >= 100 else (2 if progress > 0 or book.get("updateTime") else 1)
+            reading_time = book.get("recordReadingTime") or 0
+            marked_status = 4 if finished or progress >= 100 else (2 if progress > 0 or reading_time > 0 else 1)
+            last_reading = (
+                book.get("updateTime")
+                if not finished and (progress > 0 or reading_time > 0)
+                else None
+            )
             return {
-                "markedStatus": marked_status, "readingTime": book.get("recordReadingTime") or 0,
-                "readingProgress": progress, "finishedDate": finished,
-                "readDetail": {}, "bookInfo": {},
+                "markedStatus": marked_status,
+                "readingTime": reading_time,
+                "readingProgress": progress,
+                "finishedDate": finished,
+                "lastReadingDate": last_reading,
+                "readDetail": {},
+                "bookInfo": {},
             }
         self.session.get(WEREAD_URL)
         params = dict(
