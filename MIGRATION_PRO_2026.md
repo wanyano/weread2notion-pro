@@ -120,3 +120,19 @@ only a draft repair branch**. Manual dispatch is allowed on
 branch still contains the two legacy three-hour schedules; those are replaced
 only after this PR is reviewed and merged, or they must be disabled manually in
 GitHub Actions. This draft does not modify `main` directly.
+
+
+## Existing book status and progress
+
+The safe book reconciliation also reads `progress`, `finishTime`, and
+`recordReadingTime` from WeRead `/book/getprogress` for every ebook already
+present in the Notion shelf.
+
+Updates are monotonic:
+
+- `想读 -> 在读 -> 已读` is allowed; status is never downgraded.
+- A nonzero `finishTime` or 100% progress promotes the book to `已读`.
+- A finished book is promoted to 100% progress.
+- Reading progress and cumulative reading time only increase.
+- Only `阅读状态`, `阅读进度`, and `阅读时长` are patched.
+- Preview mode reports counts and never modifies a Notion page.
