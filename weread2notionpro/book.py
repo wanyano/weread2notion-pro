@@ -35,7 +35,7 @@ def insert_book_to_notion(books, index, bookId):
     status = "想读"
     if markedStatus == 4:
         status = "已读"
-    elif book.get("readingTime", 0) >= 60:
+    elif book.get("readingProgress", 0) > 0 or book.get("readingTime", 0) > 0:
         status = "在读"
     book["阅读状态"] = status
     book["阅读时长"] = book.get("readingTime")
