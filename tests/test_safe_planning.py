@@ -64,6 +64,15 @@ class SafePlanningTests(unittest.TestCase):
         self.assertEqual(plan["reading_progress"], 1.0)
         self.assertEqual(plan["reading_time"], 900)
 
+    def test_shelf_finished_marker_is_authoritative(self):
+        plan = book_state_update(
+            {"progress": 72, "finishTime": 0, "finishReading": 1,
+             "recordReadingTime": 900},
+            {"status": "想读", "readingProgress": 0.72, "readingTime": 900},
+        )
+        self.assertEqual(plan["status"], "已读")
+        self.assertEqual(plan["reading_progress"], 1.0)
+
     def test_book_state_never_moves_backwards(self):
         plan = book_state_update(
             {"progress": 30, "finishTime": 0, "recordReadingTime": 300},
