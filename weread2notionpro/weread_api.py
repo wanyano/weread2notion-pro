@@ -46,6 +46,13 @@ class WeReadApi:
             raise RuntimeError(f"WeRead gateway request failed: {api_name}, code={data.get('errcode')}")
         return data
 
+    @retry(stop_max_attempt_number=5, wait_fixed=15000)
+    def get_book_progress(self, book_id):
+        """Read one progress record with bounded retries for gateway throttling."""
+        if not self.api_key:
+            raise RuntimeError("Gateway book progress requires WEREAD_API_KEY")
+        return self.gateway("/book/getprogress", bookId=book_id)
+
     def try_get_cloud_cookie(self, url, id, password):
         if url.endswith("/"):
             url = url[:-1]
@@ -184,7 +191,7 @@ class WeReadApi:
     @retry(stop_max_attempt_number=3, wait_fixed=5000)
     def get_read_info(self, bookId):
         if self.api_key:
-            data = self.gateway("/book/getprogress", bookId=bookId)
+            data = self.get_book_progress(bookId)
             book = data.get("book") or {}
             # Official /book/getprogress returns an integer percentage 0–100;
             # progress=1 means 1%, not 100%.
