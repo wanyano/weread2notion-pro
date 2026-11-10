@@ -81,6 +81,15 @@ class SafePlanningTests(unittest.TestCase):
         self.assertEqual(plan["status"], "在读")
         self.assertEqual(plan["reading_progress"], 0.01)
 
+    def test_update_timestamp_alone_does_not_mean_reading(self):
+        plan = book_state_update(
+            {"progress": 0, "finishTime": 0, "recordReadingTime": 0,
+             "updateTime": 1730000000},
+            {"status": "想读", "readingProgress": 0, "readingTime": 0},
+        )
+        self.assertIsNone(plan["status"])
+        self.assertIsNone(plan["reading_progress"])
+
     def test_zero_limit_selects_every_remaining_book(self):
         books = [str(index) for index in range(233)]
         self.assertEqual(len(select_book_batch(books, 0, 0)), 233)
