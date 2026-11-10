@@ -4,6 +4,7 @@ from weread2notionpro.book_progress_planning import (
     book_state_update,
     cumulative_update,
     select_book_batch,
+    title_matches,
 )
 from weread2notionpro.read_time_planning import (
     daily_reconciliation,
@@ -112,6 +113,10 @@ class SafePlanningTests(unittest.TestCase):
         books = [str(index) for index in range(233)]
         self.assertEqual(len(select_book_batch(books, 0, 0)), 233)
         self.assertEqual(select_book_batch(books, 230, 0), ["230", "231", "232"])
+
+    def test_debug_title_match_is_exact(self):
+        self.assertTrue(title_matches("全员嫌疑人", "全员嫌疑人"))
+        self.assertFalse(title_matches("嫌疑人", "全员嫌疑人"))
 
 
 if __name__ == "__main__":
