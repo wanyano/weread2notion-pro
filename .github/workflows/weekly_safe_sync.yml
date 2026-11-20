@@ -59,19 +59,31 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
       - name: Add only missing WeRead shelf books
+        id: books
+        continue-on-error: true
         run: python -m weread2notionpro.book
-      - name: Increase time, progress and status for every shelf book
+      - name: Increase time, progress, status and stable dates for every shelf book
+        id: book_state
+        continue-on-error: true
         run: python -m weread2notionpro.book_progress_sync
       - name: Append new highlights and notes without deleting Notion history
+        id: notes
+        continue-on-error: true
         run: python -m weread2notionpro.weread
       - name: Increment current-year daily reading time
+        id: read_time
+        continue-on-error: true
         run: python -m weread2notionpro.read_time
       - name: Resolve current heatmap year
         shell: bash
         run: echo "HEATMAP_YEAR=$(TZ=Asia/Shanghai date +%Y)" >> "$GITHUB_ENV"
       - name: Render heatmap from preserved daily history
+        id: heatmap_render
+        continue-on-error: true
         run: python -m weread2notionpro.heatmap_sync --year "$HEATMAP_YEAR"
       - name: Commit changed heatmap only
+        id: heatmap_commit
+        continue-on-error: true
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -85,4 +97,33 @@ jobs:
           fi
           echo "HEATMAP_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - name: Point the existing Notion embed at the committed heatmap
+        id: heatmap_embed
+        continue-on-error: true
         run: python -m weread2notionpro.heatmap_sync --year "$HEATMAP_YEAR" --update-embed
+      - name: Report any failed synchronization component
+        if: always()
+        shell: bash
+        env:
+          BOOKS_OUTCOME: ${{ steps.books.outcome }}
+          BOOK_STATE_OUTCOME: ${{ steps.book_state.outcome }}
+          NOTES_OUTCOME: ${{ steps.notes.outcome }}
+          READ_TIME_OUTCOME: ${{ steps.read_time.outcome }}
+          HEATMAP_RENDER_OUTCOME: ${{ steps.heatmap_render.outcome }}
+          HEATMAP_COMMIT_OUTCOME: ${{ steps.heatmap_commit.outcome }}
+          HEATMAP_EMBED_OUTCOME: ${{ steps.heatmap_embed.outcome }}
+        run: |
+          failed=0
+          check_step() {
+            if [[ "$2" != "success" ]]; then
+              echo "::error::$1 failed with outcome $2"
+              failed=1
+            fi
+          }
+          check_step "bookshelf" "$BOOKS_OUTCOME"
+          check_step "book state" "$BOOK_STATE_OUTCOME"
+          check_step "notes" "$NOTES_OUTCOME"
+          check_step "daily reading time" "$READ_TIME_OUTCOME"
+          check_step "heatmap render" "$HEATMAP_RENDER_OUTCOME"
+          check_step "heatmap commit" "$HEATMAP_COMMIT_OUTCOME"
+          check_step "heatmap embed" "$HEATMAP_EMBED_OUTCOME"
+          exit "$failed"
