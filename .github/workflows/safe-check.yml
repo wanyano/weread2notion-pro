@@ -39,6 +39,8 @@ jobs:
           assert "BOOKSHELF_IMPORT: 'true'" in weekly
           assert "BOOK_PROGRESS_LIMIT: '0'" in weekly
           assert "cancel-in-progress: false" in weekly
+          assert weekly.count("continue-on-error: true") >= 7
+          assert "Report any failed synchronization component" in weekly
 
           required_steps = [
               "python -m weread2notionpro.book",

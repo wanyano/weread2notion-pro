@@ -199,17 +199,12 @@ class WeReadApi:
             finished = book.get("finishTime") or 0
             reading_time = book.get("recordReadingTime") or 0
             marked_status = 4 if finished or progress >= 100 else (2 if progress > 0 or reading_time > 0 else 1)
-            last_reading = (
-                book.get("updateTime")
-                if not finished and (progress > 0 or reading_time > 0)
-                else None
-            )
             return {
                 "markedStatus": marked_status,
                 "readingTime": reading_time,
                 "readingProgress": progress,
                 "finishedDate": finished,
-                "lastReadingDate": last_reading,
+                # The stable latest-reading timestamp comes from shelf.readUpdateTime.
                 "readDetail": {},
                 "bookInfo": {},
             }

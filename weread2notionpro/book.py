@@ -18,6 +18,8 @@ def insert_book_to_notion(books, index, bookId):
     book = {}
     if bookId in archive_dict:
         book["书架分类"] = archive_dict.get(bookId)
+    if bookId in shelf_metadata:
+        book.update(shelf_metadata.get(bookId) or {})
     if bookId in notion_books:
         book.update(notion_books.get(bookId))
     bookInfo = weread_api.get_bookinfo(bookId)
@@ -49,6 +51,7 @@ def insert_book_to_notion(books, index, bookId):
         book.get("finishedDate")
         or book.get("lastReadingDate")
         or book.get("readingBookDate")
+        or book.get("readUpdateTime")
     )
     book["开始阅读时间"] = book.get("beginReadingDate")
     book["最后阅读时间"] = book.get("lastReadingDate")
@@ -155,16 +158,19 @@ weread_api = WeReadApi()
 notion_helper = NotionHelper()
 archive_dict = {}
 notion_books = {}
+shelf_metadata = {}
 
 
 def main():
     global notion_books
     global archive_dict
+    global shelf_metadata
     notion_books = notion_helper.get_all_book()
     if weread_api.api_key:
         shelf = weread_api.get_bookshelf()
         notebooks = weread_api.get_notebooklist()
         plan = plan_bookshelf(shelf, notebooks, notion_books.keys())
+        shelf_metadata = plan["metadata"]
         missing = plan["missing_book_ids"]
         print(
             "FULL_SHELF_AUDIT: "

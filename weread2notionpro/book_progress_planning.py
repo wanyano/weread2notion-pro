@@ -67,14 +67,14 @@ def book_state_update(source, existing):
     ):
         raise ValueError("Invalid finish time from WeRead")
 
-    update_time = source.get("updateTime") or 0
+    read_update_time = source.get("readUpdateTime") or 0
     if (
-        isinstance(update_time, bool)
-        or not isinstance(update_time, (int, float))
-        or update_time < 0
-        or int(update_time) != update_time
+        isinstance(read_update_time, bool)
+        or not isinstance(read_update_time, (int, float))
+        or read_update_time < 0
+        or int(read_update_time) != read_update_time
     ):
-        raise ValueError("Invalid update time from WeRead")
+        raise ValueError("Invalid shelf read update time from WeRead")
 
     finish_reading = source.get("finishReading")
     if finish_reading not in (None, 0, 1, False, True):
@@ -146,11 +146,12 @@ def book_state_update(source, existing):
 
     # "时间" drives the 年/月/周/日 relations used by the bookshelf views.
     # Prefer an authoritative finish timestamp. For an actively read book,
-    # updateTime is the latest progress event. Never move an existing date back.
+    # shelf readUpdateTime is stable across API reads, unlike the per-book
+    # progress updateTime observed from the gateway. Never move a date back.
     source_event_time = (
         finish_time
         if finished and finish_time
-        else update_time
+        else read_update_time
         if source_status != "想读"
         else 0
     )

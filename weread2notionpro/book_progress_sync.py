@@ -34,6 +34,8 @@ def prepare_changes(
             book["finishReading"] = 1
         if shelf_book.get("markedStatus") == 4:
             book["markedStatus"] = 4
+        if shelf_book.get("readUpdateTime") is not None:
+            book["readUpdateTime"] = shelf_book.get("readUpdateTime")
         if index % 20 == 0:
             print(f"BOOK_PROGRESS_READ: {index}/{len(ordered_ids)}")
         if index < len(ordered_ids) and request_interval:
@@ -56,6 +58,7 @@ def prepare_changes(
                 f'planned_progress={planned.get("reading_progress")} '
                 f'source_finish_time={book.get("finishTime")} '
                 f'source_update_time={book.get("updateTime")} '
+                f'shelf_read_update_time={book.get("readUpdateTime")} '
                 f'current_event_time={record.get("eventTime")} '
                 f'planned_event_time={planned.get("event_time")}'
             )
@@ -74,6 +77,7 @@ def prepare_changes(
         changes.append({
             "page_id": record["pageId"],
             "book_id": book_id,
+            "previous_event_time": record.get("eventTime"),
             **planned,
         })
     return {
@@ -142,6 +146,29 @@ def main():
     plan = prepare_changes(
         api, notion_books, subset, shelf_books, request_interval, debug_title
     )
+    date_transitions = {}
+    for item in plan["changes"]:
+        if item["event_time"] is None:
+            continue
+        previous = item.get("previous_event_time")
+        previous_year = (
+            str(pendulum.from_timestamp(previous, tz="Asia/Shanghai").year)
+            if previous
+            else "missing"
+        )
+        source_year = str(
+            pendulum.from_timestamp(item["event_time"], tz="Asia/Shanghai").year
+        )
+        key = f"{previous_year}->{source_year}"
+        date_transitions[key] = date_transitions.get(key, 0) + 1
+    transition_summary = ",".join(
+        f"{key}:{date_transitions[key]}" for key in sorted(date_transitions)
+    ) or "none"
+    print(
+        f'BOOK_DATE_AUDIT: planned={plan["date_updates"]} '
+        f'transitions={transition_summary}'
+    )
+
     print(
         f'BOOK_PROGRESS_AUDIT: mode={mode} offset={offset} batch={len(subset)} '
         f'total_shelf_books={len(ids)} update={len(plan["changes"])} '
@@ -156,29 +183,45 @@ def main():
     if mode == "preview":
         print("BOOK_PROGRESS_PREVIEW_ONLY: no Notion book fields modified")
         return
+    failed_updates = []
+    successful_updates = 0
     for item in plan["changes"]:
-        properties = {}
-        if item["reading_time"] is not None:
-            properties["阅读时长"] = {"number": item["reading_time"]}
-        if item["reading_progress"] is not None:
-            properties["阅读进度"] = {"number": item["reading_progress"]}
-        if item["status"] is not None:
-            properties["阅读状态"] = {"status": {"name": item["status"]}}
-        if item["event_time"] is not None:
-            event_date = pendulum.from_timestamp(
-                item["event_time"], tz="Asia/Shanghai"
+        try:
+            properties = {}
+            if item["reading_time"] is not None:
+                properties["阅读时长"] = {"number": item["reading_time"]}
+            if item["reading_progress"] is not None:
+                properties["阅读进度"] = {"number": item["reading_progress"]}
+            if item["status"] is not None:
+                properties["阅读状态"] = {"status": {"name": item["status"]}}
+            if item["event_time"] is not None:
+                event_date = pendulum.from_timestamp(
+                    item["event_time"], tz="Asia/Shanghai"
+                )
+                properties["时间"] = utils.get_date(event_date.to_datetime_string())
+                helper.get_date_relation(properties, event_date)
+            helper.update_book_page(
+                page_id=item["page_id"],
+                properties=properties,
             )
-            properties["时间"] = utils.get_date(event_date.to_datetime_string())
-            helper.get_date_relation(properties, event_date)
-        helper.update_book_page(
-            page_id=item["page_id"],
-            properties=properties,
-        )
+            successful_updates += 1
+        except Exception as error:
+            failed_updates.append(item["book_id"])
+            print(
+                "::warning::BOOK_PROGRESS_WRITE_FAILED "
+                f'bookId={item["book_id"]} error={type(error).__name__}'
+            )
     print(
-        f'BOOK_PROGRESS_IMPORT_COMPLETED: pages={len(plan["changes"])} '
+        f'BOOK_PROGRESS_IMPORT_COMPLETED: pages={successful_updates} '
+        f'failed={len(failed_updates)} '
         f'time={plan["time_updates"]} progress={plan["progress_updates"]} '
         f'status={plan["status_updates"]} date={plan["date_updates"]}'
     )
+    if failed_updates:
+        raise RuntimeError(
+            f"Notion updates failed for {len(failed_updates)} book pages; "
+            "successful pages were kept and failed pages are safe to retry"
+        )
 
 
 if __name__ == "__main__":
