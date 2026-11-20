@@ -183,29 +183,45 @@ def main():
     if mode == "preview":
         print("BOOK_PROGRESS_PREVIEW_ONLY: no Notion book fields modified")
         return
+    failed_updates = []
+    successful_updates = 0
     for item in plan["changes"]:
-        properties = {}
-        if item["reading_time"] is not None:
-            properties["阅读时长"] = {"number": item["reading_time"]}
-        if item["reading_progress"] is not None:
-            properties["阅读进度"] = {"number": item["reading_progress"]}
-        if item["status"] is not None:
-            properties["阅读状态"] = {"status": {"name": item["status"]}}
-        if item["event_time"] is not None:
-            event_date = pendulum.from_timestamp(
-                item["event_time"], tz="Asia/Shanghai"
+        try:
+            properties = {}
+            if item["reading_time"] is not None:
+                properties["阅读时长"] = {"number": item["reading_time"]}
+            if item["reading_progress"] is not None:
+                properties["阅读进度"] = {"number": item["reading_progress"]}
+            if item["status"] is not None:
+                properties["阅读状态"] = {"status": {"name": item["status"]}}
+            if item["event_time"] is not None:
+                event_date = pendulum.from_timestamp(
+                    item["event_time"], tz="Asia/Shanghai"
+                )
+                properties["时间"] = utils.get_date(event_date.to_datetime_string())
+                helper.get_date_relation(properties, event_date)
+            helper.update_book_page(
+                page_id=item["page_id"],
+                properties=properties,
             )
-            properties["时间"] = utils.get_date(event_date.to_datetime_string())
-            helper.get_date_relation(properties, event_date)
-        helper.update_book_page(
-            page_id=item["page_id"],
-            properties=properties,
-        )
+            successful_updates += 1
+        except Exception as error:
+            failed_updates.append(item["book_id"])
+            print(
+                "::warning::BOOK_PROGRESS_WRITE_FAILED "
+                f'bookId={item["book_id"]} error={type(error).__name__}'
+            )
     print(
-        f'BOOK_PROGRESS_IMPORT_COMPLETED: pages={len(plan["changes"])} '
+        f'BOOK_PROGRESS_IMPORT_COMPLETED: pages={successful_updates} '
+        f'failed={len(failed_updates)} '
         f'time={plan["time_updates"]} progress={plan["progress_updates"]} '
         f'status={plan["status_updates"]} date={plan["date_updates"]}'
     )
+    if failed_updates:
+        raise RuntimeError(
+            f"Notion updates failed for {len(failed_updates)} book pages; "
+            "successful pages were kept and failed pages are safe to retry"
+        )
 
 
 if __name__ == "__main__":
