@@ -34,6 +34,8 @@ def prepare_changes(
             book["finishReading"] = 1
         if shelf_book.get("markedStatus") == 4:
             book["markedStatus"] = 4
+        if shelf_book.get("readUpdateTime") is not None:
+            book["readUpdateTime"] = shelf_book.get("readUpdateTime")
         if index % 20 == 0:
             print(f"BOOK_PROGRESS_READ: {index}/{len(ordered_ids)}")
         if index < len(ordered_ids) and request_interval:
@@ -56,6 +58,7 @@ def prepare_changes(
                 f'planned_progress={planned.get("reading_progress")} '
                 f'source_finish_time={book.get("finishTime")} '
                 f'source_update_time={book.get("updateTime")} '
+                f'shelf_read_update_time={book.get("readUpdateTime")} '
                 f'current_event_time={record.get("eventTime")} '
                 f'planned_event_time={planned.get("event_time")}'
             )
