@@ -9,6 +9,11 @@ from retrying import retry
 from urllib.parse import quote
 from dotenv import load_dotenv
 
+from weread2notionpro.gateway_policy import (
+    WEREAD_SKILL_VERSION,
+    validate_gateway_response,
+)
+
 load_dotenv()
 WEREAD_URL = "https://weread.qq.com/"
 WEREAD_NOTEBOOKS_URL = "https://i.weread.qq.com/user/notebooks"
@@ -32,18 +37,21 @@ class WeReadApi:
             self.session.cookies = self.parse_cookie_string()
 
     def gateway(self, api_name, **kwargs):
-        """WeRead skill v1.0.5 gateway. Never log credentials or response bodies."""
+        """Call the official gateway without logging credentials or response bodies."""
         response = self.session.post(
             "https://i.weread.qq.com/api/agent/gateway",
-            json={"api_name": api_name, "skill_version": "1.0.5", **kwargs},
+            json={
+                "api_name": api_name,
+                "skill_version": WEREAD_SKILL_VERSION,
+                **kwargs,
+            },
             timeout=30,
         )
         response.raise_for_status()
         data = response.json()
-        if data.get("upgrade_info"):
-            raise RuntimeError(f"WeRead gateway skill upgrade required: {data['upgrade_info']}")
-        if data.get("errcode", 0) != 0:
-            raise RuntimeError(f"WeRead gateway request failed: {api_name}, code={data.get('errcode')}")
+        warning = validate_gateway_response(api_name, data)
+        if warning:
+            print(f"::warning title=WeRead skill update::{warning}")
         return data
 
     @retry(stop_max_attempt_number=5, wait_fixed=15000)
@@ -100,7 +108,7 @@ class WeReadApi:
 
     def get_bookshelf(self):
         if self.api_key:
-            # Official WeRead skill 1.0.5: /shelf/sync takes no parameters.
+            # Official WeRead skill 1.0.6: /shelf/sync takes no parameters.
             data = self.gateway("/shelf/sync")
             if not isinstance(data.get("books"), list):
                 raise ValueError("WeRead shelf response has no books[] array")
